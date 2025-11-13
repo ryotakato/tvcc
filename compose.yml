@@ -1,0 +1,11 @@
+services:
+  tvcc:
+    container_name: tvcc
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ${PWD}:/tvcc
+    working_dir: /tvcc
+    command: ./test.sh
