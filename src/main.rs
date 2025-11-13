@@ -12,25 +12,57 @@ fn main() {
 
     args.next();
 
-    let num: i32 = match args.next() {
-        Some(arg) => {
-            match arg.parse::<i32>() {
-                Ok(n) => n,
-                Err(_) => {
-                    eprintln!("The argument is not number");
-                    process::exit(1);
-                }
-            }
-        },
+    let formula = match args.next() {
+        Some(arg) => arg,
         None => {
             eprintln!("Didn't get a num string");
             process::exit(1);
         }
     };
 
+    let mut dividec_formula: Vec<String> = vec![];
+    let mut temp: String = String::from("");
+    for c in formula.chars() {
+        match c {
+            '+'|'-' => {
+                if !temp.is_empty() {
+                    dividec_formula.push(temp.to_string());
+                    temp.clear();
+                }
+                dividec_formula.push(c.to_string());
+            }
+            '0'..'9' => {
+                temp = format!("{}{}", temp, c);
+            }
+            _ => {
+                eprintln!("Unexpected charactor: {}", c);
+                process::exit(1);
+            }
+        }
+
+    }
+
+    if !temp.is_empty() {
+        dividec_formula.push(temp.to_string());
+        temp.clear();
+    }
+
+    //println!("{:?}", dividec_formula);
+
+
+
     println!(".intel_syntax noprefix");
     println!(".globl main");
     println!("main:");
-    println!("  mov rax, {}", num);
+    print!("  mov rax, ");
+
+    for f in dividec_formula {
+        match f.as_str() {
+            "+" => print!("  add rax, "),
+            "-" => print!("  sub rax, "),
+            _ => println!("{}", f),
+        };
+    }
+
     println!("  ret");
 }
