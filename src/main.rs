@@ -3,30 +3,52 @@ use std::process;
 
 // error helper function
 fn error(message: &str) -> ! {
+    println!("");
     eprintln!("{}", message);
     process::exit(1);
 }
+
+fn errors(messages: &[&str]) -> ! {
+    println!("");
+    for m in messages {
+        eprintln!("{}", m);
+    }
+    process::exit(1);
+}
+
+
 
 // the kind of token
 #[derive(Debug)]
 enum TokenKind {
     Reserved(String), // symbol
-    Num(String, i32), // number
+    Num(String), // number
     Eof               // the end of input
+}
+
+impl TokenKind {
+    fn num_val(&self) -> Option<i32> {
+        match self {
+            TokenKind::Num(str) => Some(str.parse::<i32>().unwrap()),
+            _ => None,
+        }
+    }
 }
 
 // Token struct
 #[derive(Debug)]
 struct Token {
     kind: TokenKind,
-    next: Option<Box<Token>>
+    next: Option<Box<Token>>,
+    loc: usize,
 }
 
 impl Token {
-    fn new(kind: TokenKind) -> Token {
+    fn new(kind: TokenKind, loc: usize) -> Token {
         Token {
             kind,
             next: None,
+            loc,
         }
     }
 
@@ -38,35 +60,21 @@ impl Token {
         }
     }
 
-    // if TokenKind is Reserved and op is expected, true
-    // otherwise, false
-    fn consume(&self, op: &str) -> bool {
+    // if TokenKind is Reserved and op is expected, Ok
+    // otherwise, error string
+    fn expect(&self, op: &str) -> Result<(), String> {
         match &self.kind {
-            TokenKind::Reserved(val) if val == op => {
-                true
-            },
-            _ => false
+            TokenKind::Reserved(val) if val == op => Ok(()),
+            _ => Err(format!("{:>padding$} it is not {}", '^', op, padding = self.loc+1))
         }
     }
 
-    // if TokenKind is Reserved and op is expected, OK
-    // otherwise, error
-    fn expect(&self, op: &str) {
+    // if TokenKind is Num, Ok and the value
+    // otherwise, error string
+    fn expect_number(&self) -> Result<i32, String> {
         match &self.kind {
-            TokenKind::Reserved(val) if val == op => {
-            },
-            _ => error(format!("it is not {}", op).as_str())
-        }
-    }
-
-    // if TokenKind is Num, the value
-    // otherwise, error
-    fn expect_number<'a>(&'a self) -> &'a i32 {
-        match &self.kind {
-            TokenKind::Num(_, val) => {
-                &val
-            },
-            _ => error("it is not number")
+            TokenKind::Num(_) => Ok(self.kind.num_val().unwrap()),
+            _ => Err(format!("{:>padding$} it is not number", '^', padding = self.loc+1))
         }
     }
 
@@ -74,7 +82,8 @@ impl Token {
 
 // the list of Token 
 struct TokenList {
-    head: Option<Box<Token>>
+    head: Option<Box<Token>>,
+    origin_formula: String
 }
 
 // the iterator of the TokenList
@@ -127,42 +136,41 @@ impl<'a> Iterator for TokenListIterator<'a> {
 // change input formula into TokenList
 fn tokenise(formula: String) -> TokenList {
 
-    let mut token_list = TokenList { head: None };
+    let mut token_list = TokenList { head: None, origin_formula: formula.clone() };
 
     // for the number consisting of multiple charactors
     let mut temp: String = String::from("");
+    let mut num_loc = 0;
 
-    for c in formula.chars() {
+    for (i, c) in formula.chars().enumerate() {
         match c {
             ' ' => {
                 if !temp.is_empty() {
-                    let i = temp.parse::<i32>().unwrap();
-                    token_list.push_back(Token::new(TokenKind::Num(temp.to_string(), i)));
+                    token_list.push_back(Token::new(TokenKind::Num(temp.to_string()), num_loc));
                     temp.clear();
                 }
             }
             '+'|'-' => {
                 if !temp.is_empty() {
-                    let i = temp.parse::<i32>().unwrap();
-                    token_list.push_back(Token::new(TokenKind::Num(temp.to_string(), i)));
+                    token_list.push_back(Token::new(TokenKind::Num(temp.to_string()), num_loc));
                     temp.clear();
                 }
-                token_list.push_back(Token::new(TokenKind::Reserved(c.to_string())));
+                token_list.push_back(Token::new(TokenKind::Reserved(c.to_string()), i));
             }
             '0'..'9' => {
+                num_loc = i;
                 temp = format!("{}{}", temp, c);
             }
-            _ => error(format!("Unexpected charactor: {}", c).as_str()),
+            _ => errors(&[&token_list.origin_formula, format!("{:>padding$} Unexpected charactor", '^', padding = i+1).as_str()])
         }
     }
 
     if !temp.is_empty() {
-        let i = temp.parse::<i32>().unwrap();
-        token_list.push_back(Token::new(TokenKind::Num(temp.to_string(), i)));
+        token_list.push_back(Token::new(TokenKind::Num(temp.to_string()), num_loc));
         temp.clear();
     }
 
-    token_list.push_back(Token::new(TokenKind::Eof));
+    token_list.push_back(Token::new(TokenKind::Eof, 0)); // TODO is the location of eof really 0 ?
 
     token_list
 }
@@ -210,18 +218,35 @@ fn main() {
         }
 
         if expect_num {
-            println!("{}", t.expect_number());
+            let number = match t.expect_number() {
+                Ok(n) => n,
+                Err(e) => {
+                    errors(&[&token_list.origin_formula, &e]);
+                },
+            };
+            println!("{}", number);
             expect_num = false;
         } else {
-            if t.consume("+") {
-                print!("  add rax, ");
-                expect_num = true;
-                continue;
+            let plus_result = t.expect("+");
+            match plus_result {
+                Ok(_) => {
+                    print!("  add rax, ");
+                    expect_num = true;
+                    continue;
+                },
+                Err(_) => {}
             }
 
-            t.expect("-");
-            print!("  sub rax, ");
-            expect_num = true;
+            let minus_result = t.expect("-");
+            match minus_result {
+                Ok(_) => {
+                    print!("  sub rax, ");
+                    expect_num = true;
+                },
+                Err(e) => {
+                    errors(&[&token_list.origin_formula, &e]);
+                }
+            }
         }
     }
 
