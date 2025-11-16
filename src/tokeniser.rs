@@ -1,4 +1,4 @@
-use crate::util;
+use crate::cc_util;
 
 
 // the kind of token
@@ -35,19 +35,6 @@ impl Token {
         }
     }
 
-    pub fn next(&self) -> Option<&Token> {
-        match &self.next.as_deref() {
-            Some(next_t) => {
-                //let next_t = *next_t;
-                match &next_t.kind {
-                    TokenKind::Eof => None,
-                    _ => Some(next_t),
-                }
-            },
-            None => None,
-        }
-    }
-
     // check the end of eof
     pub fn at_eof(&self) -> bool {
         match self.kind {
@@ -58,10 +45,10 @@ impl Token {
 
     // if TokenKind is Reserved and op is expected, Ok
     // otherwise, error string
-    pub fn expect(&self, op: &str) -> Result<(), String> {
+    pub fn expect_symbol(&self, op: &str) -> Result<(), String> {
         match &self.kind {
             TokenKind::Reserved(val) if val == op => Ok(()),
-            _ => Err(format!("{:>padding$} it is not {}", '^', op, padding = self.loc+1))
+            _ => Err(format!("{:>padding$} expected {}", '^', op, padding = self.loc+1))
         }
     }
 
@@ -70,7 +57,7 @@ impl Token {
     pub fn expect_number(&self) -> Result<i32, String> {
         match &self.kind {
             TokenKind::Num(_) => Ok(self.kind.num_val().unwrap()),
-            _ => Err(format!("{:>padding$} it is not number", '^', padding = self.loc+1))
+            _ => Err(format!("{:>padding$} expected a number", '^', padding = self.loc+1))
         }
     }
 
@@ -116,6 +103,12 @@ impl TokenList {
 
 }
 
+impl<'a> TokenListIterator<'a> {
+    pub fn current(&self) -> Option<&'a Token> {
+        self.next
+    }
+}
+
 impl<'a> Iterator for TokenListIterator<'a> {
     type Item = &'a Token;
 
@@ -153,11 +146,11 @@ pub fn tokenise(formula: String) -> TokenList {
                 }
                 token_list.push_back(Token::new(TokenKind::Reserved(c.to_string()), i));
             }
-            '0'..'9' => {
+            '0'..='9' => {
                 num_loc = i;
                 temp = format!("{}{}", temp, c);
             }
-            _ => util::errors(&[&token_list.origin_formula, format!("{:>padding$} Unexpected charactor", '^', padding = i+1).as_str()])
+            _ => cc_util::errors(&[&token_list.origin_formula, format!("{:>padding$} Unexpected charactor", '^', padding = i+1).as_str()])
         }
     }
 
@@ -166,7 +159,7 @@ pub fn tokenise(formula: String) -> TokenList {
         temp.clear();
     }
 
-    token_list.push_back(Token::new(TokenKind::Eof, 0)); // TODO is the location of eof really 0 ?
+    token_list.push_back(Token::new(TokenKind::Eof, formula.len()));
 
     token_list
 }

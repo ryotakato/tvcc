@@ -1,8 +1,8 @@
 use std::env;
 
-mod util;
+mod cc_util;
 
-use tvcc::compile;
+use tvcc;
 
 
 
@@ -11,14 +11,14 @@ fn main() {
     let mut args = env::args();
 
     if args.len() != 2 {
-        util::error("The number of arguments is wrong");
+        cc_util::error("The number of arguments is wrong");
     }
 
     args.next();
 
     let formula = match args.next() {
         Some(arg) => arg,
-        None => util::error("Didn't get a num string"),
+        None => cc_util::error("Didn't get a num string"),
     };
 
     tvcc::compile(formula);

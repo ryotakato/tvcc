@@ -1,5 +1,6 @@
-use crate::tokeniser::{Token, TokenList, TokenKind};
-use crate::util;
+use crate::tokeniser::{TokenListIterator};
+//use crate::cc_util::{error, errors};
+use crate::cc_util;
 
 pub enum NodeKind {
     Add, // +
@@ -25,67 +26,42 @@ impl Node {
     }
 }
 
-pub fn expr(mut token: &Token) -> Option<Box<Node>> {
-    //println!("{:?}", token);
-    let mut node: Option<Box<Node>> = mul(token);
-
+pub fn expr(token_iter: &mut TokenListIterator) -> Option<Box<Node>> {
+    let mut node: Option<Box<Node>> = mul(token_iter);
 
     loop {
 
-        println!("=================");
-        println!("expr => {:?}", token);
-        if let Some(nt) = &token.next() {
+        if let Ok(_) = token_iter.current().unwrap().expect_symbol("+") {
+            token_iter.next();
+            node = Some(Box::new(Node::new(NodeKind::Add, node, mul(token_iter))));
+            continue;
+        }
 
-            if let Ok(_) = nt.expect("+") {
-                token = nt;
-                if let Some(nt) = &token.next() {
-                    token = nt;
-                    node = Some(Box::new(Node::new(NodeKind::Add, node, mul(token))));
-                    continue;
-                }
-            }
-
-            if let Ok(_) = nt.expect("-") {
-                token = nt;
-                if let Some(nt) = &token.next() {
-                    token = nt;
-                    node = Some(Box::new(Node::new(NodeKind::Sub, node, mul(token))));
-                    continue;
-                }
-            }
+        if let Ok(_) = token_iter.current().unwrap().expect_symbol("-") {
+            token_iter.next();
+            node = Some(Box::new(Node::new(NodeKind::Sub, node, mul(token_iter))));
+            continue;
         }
 
         return node;
     }
 }
 
-pub fn mul(mut token: &Token) -> Option<Box<Node>> {
-    let mut node: Option<Box<Node>> = primary(token);
-
+pub fn mul(token_iter: &mut TokenListIterator) -> Option<Box<Node>> {
+    let mut node: Option<Box<Node>> = primary(token_iter);
 
     loop {
 
-        println!("=================");
-        println!("mul => {:?}", token);
-        if let Some(nt) = &token.next() {
+        if let Ok(_) = token_iter.current().unwrap().expect_symbol("*") {
+            token_iter.next();
+            node = Some(Box::new(Node::new(NodeKind::Mul, node, primary(token_iter))));
+            continue;
+        }
 
-            if let Ok(_) = nt.expect("*") {
-                token = nt;
-                if let Some(nt) = &token.next() {
-                    token = nt;
-                    node = Some(Box::new(Node::new(NodeKind::Mul, node, primary(token))));
-                    continue;
-                }
-            }
-
-            if let Ok(_) = nt.expect("/") {
-                token = nt;
-                if let Some(nt) = &token.next() {
-                    token = nt;
-                    node = Some(Box::new(Node::new(NodeKind::Div, node, primary(token))));
-                    continue;
-                }
-            }
+        if let Ok(_) = token_iter.current().unwrap().expect_symbol("/") {
+            token_iter.next();
+            node = Some(Box::new(Node::new(NodeKind::Div, node, primary(token_iter))));
+            continue;
         }
 
         return node;
@@ -93,51 +69,52 @@ pub fn mul(mut token: &Token) -> Option<Box<Node>> {
 }
 
 
-pub fn primary(mut token: &Token) -> Option<Box<Node>> {
-    let mut node: Option<Box<Node>> = None;
+pub fn primary(token_iter: &mut TokenListIterator) -> Option<Box<Node>> {
 
-    println!("=================");
-    println!("primary => {:?}", token);
+    if let Ok(_) = token_iter.current().unwrap().expect_symbol("(") {
+        token_iter.next();
+        let node = expr(token_iter);
 
-    if let Ok(_) = token.expect("(") {
-        if let Some(nt) = &token.next() {
-            token = nt;
+        match token_iter.current().unwrap().expect_symbol(")") {
+            Ok(_) => token_iter.next(),
+            Err(e) => {
+                //cc_util::errors(&[&token_list.origin_formula, &e]);
+                cc_util::errors(&["aaa", &e]); // TODO
+                return None;
+            },
+        };
 
-            node = expr(token);
+        return node;
+    }
 
-            if let Ok(_) = token.expect(")") {
-                // TODO not error, otherwise error
-            }
-
+    match token_iter.current().unwrap().expect_number() {
+        Ok(n) => {
+            let node = Some(Box::new(Node::new(NodeKind::Num(n), None, None)));
+            token_iter.next();
             return node;
-        }
-
-    }
-
-    if let Ok(n) = token.expect_number() {
-        node = Some(Box::new(Node::new(NodeKind::Num(n), None, None)));
-        if let Some(nt) = &token.next() {
-            token = nt;
-        }
-        return node;
-    }
-    
-    return None;
+        },
+        Err(e) => {
+            //cc_util::errors(&[&token_list.origin_formula, &e]);
+            cc_util::errors(&["aaa", &e]); // TODO
+            return None;
+        },
+    };
 }
 
 
-pub fn generate(node: &Node) {
+pub fn generate(nd: Option<Box<Node>>) {
+    let node = match nd {
+        Some(n) => n,
+        None => return,
+    };
+
     if let NodeKind::Num(n) = node.kind {
         println!("  push {}", n);
         return;
     }
 
-    if let Some(l) = &node.lhs {
-        generate(&l);
-    }
-    if let Some(r) = &node.rhs {
-        generate(&r);
-    }
+    generate(node.lhs);
+    generate(node.rhs);
 
     println!("  pop rdi");
     println!("  pop rax");
@@ -145,7 +122,7 @@ pub fn generate(node: &Node) {
     match node.kind {
         NodeKind::Add => println!("  add rax, rdi"),
         NodeKind::Sub => println!("  sub rax, rdi"),
-        NodeKind::Mul => println!("  mul rax, rdi"),
+        NodeKind::Mul => println!("  imul rax, rdi"),
         NodeKind::Div => { 
             println!("  cqo");
             println!("  idiv rdi");
