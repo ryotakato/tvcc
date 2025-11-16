@@ -1,4 +1,4 @@
-use crate::tokeniser::{TokenListIterator};
+use crate::tokeniser::{Token, TokenListIterator,TokenList};
 //use crate::cc_util::{error, errors};
 use crate::cc_util;
 
@@ -17,89 +17,137 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(kind: NodeKind, lhs: Option<Box<Node>>, rhs: Option<Box<Node>>) -> Node {
+    fn new(kind: NodeKind, lhs: Option<Box<Node>>, rhs: Option<Box<Node>>) -> Node {
         Node {
             kind,
             lhs,
             rhs,
         }
     }
-}
-
-pub fn expr(token_iter: &mut TokenListIterator) -> Option<Box<Node>> {
-    let mut node: Option<Box<Node>> = mul(token_iter);
-
-    loop {
-
-        if let Ok(_) = token_iter.current().unwrap().expect_symbol("+") {
-            token_iter.next();
-            node = Some(Box::new(Node::new(NodeKind::Add, node, mul(token_iter))));
-            continue;
-        }
-
-        if let Ok(_) = token_iter.current().unwrap().expect_symbol("-") {
-            token_iter.next();
-            node = Some(Box::new(Node::new(NodeKind::Sub, node, mul(token_iter))));
-            continue;
-        }
-
-        return node;
+    fn create(kind: NodeKind, lhs: Option<Box<Node>>, rhs: Option<Box<Node>>) -> Option<Box<Node>> {
+        Some(Box::new(Node::new(kind, lhs, rhs)))
     }
 }
 
-pub fn mul(token_iter: &mut TokenListIterator) -> Option<Box<Node>> {
-    let mut node: Option<Box<Node>> = primary(token_iter);
-
-    loop {
-
-        if let Ok(_) = token_iter.current().unwrap().expect_symbol("*") {
-            token_iter.next();
-            node = Some(Box::new(Node::new(NodeKind::Mul, node, primary(token_iter))));
-            continue;
-        }
-
-        if let Ok(_) = token_iter.current().unwrap().expect_symbol("/") {
-            token_iter.next();
-            node = Some(Box::new(Node::new(NodeKind::Div, node, primary(token_iter))));
-            continue;
-        }
-
-        return node;
-    }
+pub struct Parser<'a> {
+    token_iter: TokenListIterator<'a>,
+    origin_formula: &'a str,
 }
 
+impl<'a> Parser<'a> {
+    pub fn new(token_list: &'a TokenList) -> Parser<'a> {
 
-pub fn primary(token_iter: &mut TokenListIterator) -> Option<Box<Node>> {
+        let token_iter: TokenListIterator<'a> = token_list.iter();
+        let origin_formula = &token_list.origin_formula;
 
-    if let Ok(_) = token_iter.current().unwrap().expect_symbol("(") {
-        token_iter.next();
-        let node = expr(token_iter);
+        Parser {
+            token_iter,
+            origin_formula,
+        }
+    }
 
-        match token_iter.current().unwrap().expect_symbol(")") {
-            Ok(_) => token_iter.next(),
+    pub fn parse(&mut self) -> Option<Box<Node>> {
+        self.expr()
+    }
+
+    fn cur_token(&self) -> &Token {
+        &self.token_iter.current().unwrap()
+    }
+
+    fn next_token(&mut self) -> &'a Token {
+        &self.token_iter.next().unwrap()
+    }
+
+    fn expr(&mut self) -> Option<Box<Node>> {
+        let mut node: Option<Box<Node>> = self.mul();
+
+        loop {
+
+            if let Ok(_) = self.cur_token().expect_symbol("+") {
+                let _ = &self.next_token();
+                node = Node::create(NodeKind::Add, node, self.mul());
+                continue;
+            }
+
+            if let Ok(_) = self.cur_token().expect_symbol("-") {
+                let _ = &self.next_token();
+                node = Node::create(NodeKind::Sub, node, self.mul());
+                continue;
+            }
+
+            return node;
+        }
+    }
+
+    fn mul(&mut self) -> Option<Box<Node>> {
+        let mut node: Option<Box<Node>> = self.unary();
+
+        loop {
+
+            if let Ok(_) = self.cur_token().expect_symbol("*") {
+                let _ = &self.next_token();
+                node = Node::create(NodeKind::Mul, node, self.unary());
+                continue;
+            }
+
+            if let Ok(_) = self.cur_token().expect_symbol("/") {
+                let _ = &self.next_token();
+                node = Node::create(NodeKind::Div, node, self.unary());
+                continue;
+            }
+
+            return node;
+        }
+    }
+
+    fn unary(&mut self) -> Option<Box<Node>> {
+        if let Ok(_) = self.cur_token().expect_symbol("+") {
+            let _ = &self.next_token();
+            return self.primary();
+        }
+        if let Ok(_) = self.cur_token().expect_symbol("-") {
+            let _ = &self.next_token();
+            let zero = Node::create(NodeKind::Num(0), None, None);
+            return Node::create(NodeKind::Sub, zero, self.primary());
+        }
+
+        return self.primary();
+    }
+
+
+    fn primary(&mut self) -> Option<Box<Node>> {
+
+        if let Ok(_) = self.cur_token().expect_symbol("(") {
+            let _ = &self.next_token();
+            let node = self.expr();
+
+            match self.cur_token().expect_symbol(")") {
+                Ok(_) => &self.next_token(),
+                Err(e) => {
+                    cc_util::errors(&[&self.origin_formula, &e]);
+                    return None;
+                },
+            };
+
+            return node;
+        }
+
+        match self.cur_token().expect_number() {
+            Ok(n) => {
+                let node = Node::create(NodeKind::Num(n), None, None);
+                let _ = &self.next_token();
+                return node;
+            },
             Err(e) => {
-                //cc_util::errors(&[&token_list.origin_formula, &e]);
-                cc_util::errors(&["aaa", &e]); // TODO
+                cc_util::errors(&[&self.origin_formula, &e]);
                 return None;
             },
         };
-
-        return node;
     }
-
-    match token_iter.current().unwrap().expect_number() {
-        Ok(n) => {
-            let node = Some(Box::new(Node::new(NodeKind::Num(n), None, None)));
-            token_iter.next();
-            return node;
-        },
-        Err(e) => {
-            //cc_util::errors(&[&token_list.origin_formula, &e]);
-            cc_util::errors(&["aaa", &e]); // TODO
-            return None;
-        },
-    };
 }
+
+
+
 
 
 pub fn generate(nd: Option<Box<Node>>) {

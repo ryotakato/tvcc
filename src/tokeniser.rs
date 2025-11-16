@@ -36,12 +36,12 @@ impl Token {
     }
 
     // check the end of eof
-    pub fn at_eof(&self) -> bool {
-        match self.kind {
-            TokenKind::Eof => true,
-            _ => false
-        }
-    }
+    //pub fn at_eof(&self) -> bool {
+    //    match self.kind {
+    //        TokenKind::Eof => true,
+    //        _ => false
+    //    }
+    //}
 
     // if TokenKind is Reserved and op is expected, Ok
     // otherwise, error string

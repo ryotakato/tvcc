@@ -4,6 +4,7 @@ mod parser;
 
 //use tokeniser::{tokenise};
 //use parser::{expr, generate};
+use parser::Parser;
 //use util::{error, errors};
 
 pub fn compile(formula: String) {
@@ -11,14 +12,8 @@ pub fn compile(formula: String) {
     // tokenise
     let token_list = tokeniser::tokenise(formula);
 
-    //for t in token_list.iter() {
-    //    println!("----------");
-    //    println!("{:?}", t);
-    //    println!("{}", t.at_eof());
-    //}
-
     // create abstract syntax tree (AST)
-    let node = parser::expr(&mut token_list.iter());
+    let node = Parser::new(&token_list).parse();
 
     // output assembly
     println!(".intel_syntax noprefix");
