@@ -5,12 +5,14 @@ mod parser;
 //use tokeniser::{tokenise};
 //use parser::{expr, generate};
 use parser::Parser;
+use tokeniser::Tokeniser;
 //use util::{error, errors};
 
 pub fn compile(formula: String) {
 
     // tokenise
-    let token_list = tokeniser::tokenise(formula);
+    let token_list = Tokeniser::new(formula).tokenise();
+
 
     // create abstract syntax tree (AST)
     let node = Parser::new(&token_list).parse();

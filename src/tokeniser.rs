@@ -122,45 +122,96 @@ impl<'a> Iterator for TokenListIterator<'a> {
 }
 
 
-// change input formula into TokenList
-pub fn tokenise(formula: String) -> TokenList {
+pub struct Tokeniser {
+    formula: String,
+}
 
-    let mut token_list = TokenList { head: None, origin_formula: formula.clone() };
-
-    // for the number consisting of multiple charactors
-    let mut temp: String = String::from("");
-    let mut num_loc = 0;
-
-    for (i, c) in formula.chars().enumerate() {
-        match c {
-            ' ' => {
-                if !temp.is_empty() {
-                    token_list.push_back(Token::new(TokenKind::Num(temp.to_string()), num_loc));
-                    temp.clear();
-                }
-            }
-            '+'|'-'|'*'|'/'|'('|')' => {
-                if !temp.is_empty() {
-                    token_list.push_back(Token::new(TokenKind::Num(temp.to_string()), num_loc));
-                    temp.clear();
-                }
-                token_list.push_back(Token::new(TokenKind::Reserved(c.to_string()), i));
-            }
-            '0'..='9' => {
-                num_loc = i;
-                temp = format!("{}{}", temp, c);
-            }
-            _ => cc_util::errors(&[&token_list.origin_formula, format!("{:>padding$} Unexpected charactor", '^', padding = i+1).as_str()])
+impl Tokeniser {
+    pub fn new(formula: String) -> Tokeniser {
+        Tokeniser {
+            formula,
         }
     }
 
-    if !temp.is_empty() {
-        token_list.push_back(Token::new(TokenKind::Num(temp.to_string()), num_loc));
-        temp.clear();
+    // change input formula into TokenList
+    pub fn tokenise(&self) -> TokenList {
+
+        let mut token_list = TokenList { head: None, origin_formula: self.formula.clone() };
+
+        let mut i = 0;
+        // for the number consisting of multiple charactors
+        let mut temp: String = String::from("");
+
+
+
+        let len = self.formula.len();
+
+        loop {
+
+            if len <= i {
+                break;
+            }
+
+            // empty
+            if &self.formula[i..i+1] == " " {
+                if !temp.is_empty() {
+                    token_list.push_back(Token::new(TokenKind::Num(temp.to_string()), i-temp.len()));
+                    temp.clear();
+                }
+                i = i+1;
+                continue;
+            }
+
+            // 2 bytes char
+            if i+2 <= len {
+                match &self.formula[i..i+2] {
+                    "=="|"!="|"<="|">=" => {
+                        if !temp.is_empty() {
+                            token_list.push_back(Token::new(TokenKind::Num(temp.to_string()), i-temp.len()));
+                            temp.clear();
+                        }
+                        token_list.push_back(Token::new(TokenKind::Reserved(self.formula[i..i+2].to_string()), i));
+                        i = i+2;
+                        continue;
+                    },
+                    _ => {}
+                }
+            }
+
+            // 1 byte char
+            match &self.formula[i..i+1] {
+                "+"|"-"|"*"|"/"|"("|")"|"<"|">" => {
+                    if !temp.is_empty() {
+                        token_list.push_back(Token::new(TokenKind::Num(temp.to_string()), i-temp.len()));
+                        temp.clear();
+                    }
+                    token_list.push_back(Token::new(TokenKind::Reserved(self.formula[i..i+1].to_string()), i));
+                    i = i+1;
+                    continue;
+                },
+                "0"|"1"|"2"|"3"|"4"|"5"|"6"|"7"|"8"|"9" => {
+                    temp = format!("{}{}", temp, self.formula[i..i+1].to_string());
+                    i = i+1;
+                    continue;
+                },
+                _ => {}
+            }
+
+
+            cc_util::errors(&[&token_list.origin_formula, format!("{:>padding$} Unexpected charactor", '^', padding = i+1).as_str()])
+
+        }
+
+        if !temp.is_empty() {
+            token_list.push_back(Token::new(TokenKind::Num(temp.to_string()), i-temp.len()));
+            temp.clear();
+        }
+
+        token_list.push_back(Token::new(TokenKind::Eof, len));
+
+        token_list
     }
-
-    token_list.push_back(Token::new(TokenKind::Eof, formula.len()));
-
-    token_list
 }
+
+
 

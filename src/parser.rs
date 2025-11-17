@@ -7,6 +7,10 @@ pub enum NodeKind {
     Sub, // -
     Mul, // *
     Div, // /
+    Eq,  // ==
+    Ne,  // !=
+    Lt,  // <
+    Le,  // <=
     Num(i32), // integer
 }
 
@@ -59,6 +63,64 @@ impl<'a> Parser<'a> {
     }
 
     fn expr(&mut self) -> Option<Box<Node>> {
+        self.equality()
+    }
+
+    fn equality(&mut self) -> Option<Box<Node>> {
+        let mut node: Option<Box<Node>> = self.relational();
+
+        loop {
+
+            if let Ok(_) = self.cur_token().expect_symbol("==") {
+                let _ = &self.next_token();
+                node = Node::create(NodeKind::Eq, node, self.relational());
+                continue;
+            }
+
+            if let Ok(_) = self.cur_token().expect_symbol("!=") {
+                let _ = &self.next_token();
+                node = Node::create(NodeKind::Ne, node, self.relational());
+                continue;
+            }
+
+            return node;
+        }
+    }
+
+    fn relational(&mut self) -> Option<Box<Node>> {
+        let mut node: Option<Box<Node>> = self.add();
+
+        loop {
+
+            if let Ok(_) = self.cur_token().expect_symbol("<") {
+                let _ = &self.next_token();
+                node = Node::create(NodeKind::Lt, node, self.add());
+                continue;
+            }
+
+            if let Ok(_) = self.cur_token().expect_symbol("<=") {
+                let _ = &self.next_token();
+                node = Node::create(NodeKind::Le, node, self.add());
+                continue;
+            }
+
+            if let Ok(_) = self.cur_token().expect_symbol(">") {
+                let _ = &self.next_token();
+                node = Node::create(NodeKind::Lt, self.add(), node);
+                continue;
+            }
+
+            if let Ok(_) = self.cur_token().expect_symbol(">=") {
+                let _ = &self.next_token();
+                node = Node::create(NodeKind::Le, self.add(), node);
+                continue;
+            }
+
+            return node;
+        }
+    }
+
+    fn add(&mut self) -> Option<Box<Node>> {
         let mut node: Option<Box<Node>> = self.mul();
 
         loop {
@@ -103,12 +165,12 @@ impl<'a> Parser<'a> {
     fn unary(&mut self) -> Option<Box<Node>> {
         if let Ok(_) = self.cur_token().expect_symbol("+") {
             let _ = &self.next_token();
-            return self.primary();
+            return self.unary();
         }
         if let Ok(_) = self.cur_token().expect_symbol("-") {
             let _ = &self.next_token();
             let zero = Node::create(NodeKind::Num(0), None, None);
-            return Node::create(NodeKind::Sub, zero, self.primary());
+            return Node::create(NodeKind::Sub, zero, self.unary());
         }
 
         return self.primary();
@@ -174,6 +236,26 @@ pub fn generate(nd: Option<Box<Node>>) {
         NodeKind::Div => { 
             println!("  cqo");
             println!("  idiv rdi");
+        },
+        NodeKind::Eq => {
+            println!("  cmp rax, rdi");
+            println!("  sete al");
+            println!("  movzb rax, al");
+        },
+        NodeKind::Ne => {
+            println!("  cmp rax, rdi");
+            println!("  setne al");
+            println!("  movzb rax, al");
+        },
+        NodeKind::Lt => {
+            println!("  cmp rax, rdi");
+            println!("  setl al");
+            println!("  movzb rax, al");
+        },
+        NodeKind::Le => {
+            println!("  cmp rax, rdi");
+            println!("  setle al");
+            println!("  movzb rax, al");
         },
         _ => {}
     }
