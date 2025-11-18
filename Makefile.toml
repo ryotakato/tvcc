@@ -1,0 +1,19 @@
+[tasks.login]
+script = ["docker compose run tvcc /bin/bash"]
+
+[tasks.build]
+install_crate = "cross"
+command = "cross"
+args = ["build", "--target", "x86_64-unknown-linux-musl"]
+
+[tasks.test]
+command = "cargo"
+args = ["test"]
+
+[tasks.cc_test]
+script = [
+	"docker compose up"
+]
+
+[tasks.flow]
+run_task = { name = ["build", "cc_test"] }
