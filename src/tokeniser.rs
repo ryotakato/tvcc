@@ -149,8 +149,10 @@ impl Tokeniser {
 
         let mut i = 0;
         // for the number consisting of multiple charactors
-        let mut temp: String = String::from("");
 
+        let mut start_loc = 0;
+        let mut start_num_flag = false;
+        let mut start_identifier_flag = false;
 
 
         let len = self.formula.len();
@@ -161,12 +163,40 @@ impl Tokeniser {
                 break;
             }
 
+            // if identifier continue
+            if start_identifier_flag {
+                match &self.formula[i..i+1].chars().next().unwrap() {
+                    ('0'..='9')|('a'..='z')|('A'..='Z')|'_' => {
+                        i = i+1;
+                        continue;
+                    },
+                    _ => {
+                        token_list.push_back(Token::new(TokenKind::Ident(self.formula[start_loc..i].to_string()), start_loc));
+                        start_identifier_flag = false;
+                        start_loc = 0;
+                    }
+                }
+
+            }
+
+            // if number continue
+            if start_num_flag {
+                match &self.formula[i..i+1].chars().next().unwrap() {
+                    '0'..='9' => {
+                        i = i+1;
+                        continue;
+                    },
+                    _ => {
+                        token_list.push_back(Token::new(TokenKind::Num(self.formula[start_loc..i].to_string()), start_loc));
+                        start_num_flag = false;
+                        start_loc = 0;
+                    }
+                }
+
+            }
+
             // empty
             if &self.formula[i..i+1] == " " {
-                if !temp.is_empty() {
-                    token_list.push_back(Token::new(TokenKind::Num(temp.to_string()), i-temp.len()));
-                    temp.clear();
-                }
                 i = i+1;
                 continue;
             }
@@ -175,10 +205,6 @@ impl Tokeniser {
             if i+2 <= len {
                 match &self.formula[i..i+2] {
                     "=="|"!="|"<="|">=" => {
-                        if !temp.is_empty() {
-                            token_list.push_back(Token::new(TokenKind::Num(temp.to_string()), i-temp.len()));
-                            temp.clear();
-                        }
                         token_list.push_back(Token::new(TokenKind::Reserved(self.formula[i..i+2].to_string()), i));
                         i = i+2;
                         continue;
@@ -189,28 +215,20 @@ impl Tokeniser {
 
             // 1 byte char
             match &self.formula[i..i+1].chars().next().unwrap() {
-                //"+"|"-"|"*"|"/"|"("|")"|"<"|">" => {
                 '+'|'-'|'*'|'/'|'('|')'|'<'|'>'|'='|';' => {
-                    if !temp.is_empty() {
-                        token_list.push_back(Token::new(TokenKind::Num(temp.to_string()), i-temp.len()));
-                        temp.clear();
-                    }
                     token_list.push_back(Token::new(TokenKind::Reserved(self.formula[i..i+1].to_string()), i));
                     i = i+1;
                     continue;
                 },
-                'a'..='z' => {
-                    if !temp.is_empty() {
-                        token_list.push_back(Token::new(TokenKind::Num(temp.to_string()), i-temp.len()));
-                        temp.clear();
-                    }
-                    token_list.push_back(Token::new(TokenKind::Ident(self.formula[i..i+1].to_string()), i));
+                ('a'..='z')|('A'..='Z')|'_' => {
+                    start_identifier_flag = true;
+                    start_loc = i;
                     i = i+1;
                     continue;
                 },
-                //"0"|"1"|"2"|"3"|"4"|"5"|"6"|"7"|"8"|"9" => {
                 '0'..='9' => {
-                    temp = format!("{}{}", temp, self.formula[i..i+1].to_string());
+                    start_num_flag = true;
+                    start_loc = i;
                     i = i+1;
                     continue;
                 },
@@ -222,9 +240,15 @@ impl Tokeniser {
 
         }
 
-        if !temp.is_empty() {
-            token_list.push_back(Token::new(TokenKind::Num(temp.to_string()), i-temp.len()));
-            temp.clear();
+        if start_identifier_flag {
+            token_list.push_back(Token::new(TokenKind::Ident(self.formula[start_loc..i].to_string()), start_loc));
+            //start_identifier_flag = false;
+            //start_loc = 0;
+        }
+        if start_num_flag {
+            token_list.push_back(Token::new(TokenKind::Num(self.formula[start_loc..i].to_string()), start_loc));
+            //start_num_flag = false;
+            //start_loc = 0;
         }
 
         token_list.push_back(Token::new(TokenKind::Eof, len));

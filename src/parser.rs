@@ -2,6 +2,8 @@ use crate::tokeniser::{Token, TokenListIterator,TokenList};
 //use crate::cc_util::{error, errors};
 use crate::cc_util;
 
+use std::collections::HashMap;
+
 pub enum NodeKind {
     Add, // +
     Sub, // -
@@ -35,9 +37,32 @@ impl Node {
     }
 }
 
+
+// struct for local variales 
+struct LocalVariable {
+    latest_offset: i32,
+    variables: HashMap<String, i32>,
+}
+
+impl LocalVariable {
+    fn new() -> LocalVariable {
+        LocalVariable {
+            latest_offset: 0,
+            variables: HashMap::new(),
+        }
+    }
+
+    fn find_offset(&mut self, variale_name: String) -> i32 {
+        self.variables.entry(variale_name).or_insert_with(|| {self.latest_offset = self.latest_offset + 8; self.latest_offset}).clone()
+    }
+}
+
+
+
 pub struct Parser<'a> {
     token_iter: TokenListIterator<'a>,
     origin_formula: &'a str,
+    local_variable: LocalVariable,
 }
 
 impl<'a> Parser<'a> {
@@ -45,10 +70,12 @@ impl<'a> Parser<'a> {
 
         let token_iter: TokenListIterator<'a> = token_list.iter();
         let origin_formula = &token_list.origin_formula;
+        let local_variable = LocalVariable::new();
 
         Parser {
             token_iter,
             origin_formula,
+            local_variable,
         }
     }
 
@@ -235,7 +262,7 @@ impl<'a> Parser<'a> {
         }
 
         if let Ok(lvar) = self.cur_token().expect_ident() {
-            let offset = ((lvar.chars().next().unwrap() as i32) - ('a' as i32) + 1) * 8;
+            let offset = self.local_variable.find_offset(lvar.to_string());
             let node = Node::create(NodeKind::Lvar(offset), None, None);
             let _ = &self.next_token();
 
