@@ -1,10 +1,10 @@
 use crate::cc_util;
 
-
 // the kind of token
 #[derive(Debug)]
 pub enum TokenKind {
     Reserved(String), // symbol
+    Ident(String), // identifier
     Num(String), // number
     Eof               // the end of input
 }
@@ -36,12 +36,12 @@ impl Token {
     }
 
     // check the end of eof
-    //pub fn at_eof(&self) -> bool {
-    //    match self.kind {
-    //        TokenKind::Eof => true,
-    //        _ => false
-    //    }
-    //}
+    pub fn at_eof(&self) -> bool {
+        match self.kind {
+            TokenKind::Eof => true,
+            _ => false
+        }
+    }
 
     // if TokenKind is Reserved and op is expected, Ok
     // otherwise, error string
@@ -49,6 +49,15 @@ impl Token {
         match &self.kind {
             TokenKind::Reserved(val) if val == op => Ok(()),
             _ => Err(format!("{:>padding$} expected {}", '^', op, padding = self.loc+1))
+        }
+    }
+
+    // if TokenKind is Ident, Ok
+    // otherwise, error string
+    pub fn expect_ident(&self) -> Result<&str, String> {
+        match &self.kind {
+            TokenKind::Ident(val) => Ok(val),
+            _ => Err(format!("{:>padding$} expected an ident", '^', padding = self.loc+1))
         }
     }
 
@@ -179,8 +188,9 @@ impl Tokeniser {
             }
 
             // 1 byte char
-            match &self.formula[i..i+1] {
-                "+"|"-"|"*"|"/"|"("|")"|"<"|">" => {
+            match &self.formula[i..i+1].chars().next().unwrap() {
+                //"+"|"-"|"*"|"/"|"("|")"|"<"|">" => {
+                '+'|'-'|'*'|'/'|'('|')'|'<'|'>'|'='|';' => {
                     if !temp.is_empty() {
                         token_list.push_back(Token::new(TokenKind::Num(temp.to_string()), i-temp.len()));
                         temp.clear();
@@ -189,7 +199,17 @@ impl Tokeniser {
                     i = i+1;
                     continue;
                 },
-                "0"|"1"|"2"|"3"|"4"|"5"|"6"|"7"|"8"|"9" => {
+                'a'..='z' => {
+                    if !temp.is_empty() {
+                        token_list.push_back(Token::new(TokenKind::Num(temp.to_string()), i-temp.len()));
+                        temp.clear();
+                    }
+                    token_list.push_back(Token::new(TokenKind::Ident(self.formula[i..i+1].to_string()), i));
+                    i = i+1;
+                    continue;
+                },
+                //"0"|"1"|"2"|"3"|"4"|"5"|"6"|"7"|"8"|"9" => {
+                '0'..='9' => {
                     temp = format!("{}{}", temp, self.formula[i..i+1].to_string());
                     i = i+1;
                     continue;

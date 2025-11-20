@@ -11,6 +11,7 @@ pub fn errors(messages: &[&str]) -> ! {
     println!("");
     for m in messages {
         eprintln!("{}", m);
-    }
+    };
+
     process::exit(1);
 }

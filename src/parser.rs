@@ -11,13 +11,15 @@ pub enum NodeKind {
     Ne,  // !=
     Lt,  // <
     Le,  // <=
-    Num(i32), // integer
+    Assign, // =
+    Lvar(i32), // local variables + offset
+    Num(i32), // integer + value
 }
 
 pub struct Node {
-    kind: NodeKind,
-    lhs: Option<Box<Node>>,
-    rhs: Option<Box<Node>>,
+    pub kind: NodeKind,
+    pub lhs: Option<Box<Node>>,
+    pub rhs: Option<Box<Node>>,
 }
 
 impl Node {
@@ -50,8 +52,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse(&mut self) -> Option<Box<Node>> {
-        self.expr()
+    pub fn parse(&mut self) -> Vec<Option<Box<Node>>> {
+        self.program()
     }
 
     fn cur_token(&self) -> &Token {
@@ -62,8 +64,46 @@ impl<'a> Parser<'a> {
         &self.token_iter.next().unwrap()
     }
 
+    fn program(&mut self) -> Vec<Option<Box<Node>>> {
+        let mut stmts: Vec<Option<Box<Node>>> = Vec::new();
+
+        while !self.cur_token().at_eof() {
+            stmts.push(self.stmt());
+        }
+
+        stmts
+    }
+
+    fn stmt(&mut self) -> Option<Box<Node>> {
+        let node: Option<Box<Node>> = self.expr();
+
+        match self.cur_token().expect_symbol(";") {
+            Ok(_n) => {
+                let _ = &self.next_token();
+                return node;
+            },
+            Err(e) => {
+                cc_util::errors(&[&self.origin_formula, &e]);
+                //return None;
+            },
+        };
+
+    }
+
     fn expr(&mut self) -> Option<Box<Node>> {
-        self.equality()
+        self.assign()
+    }
+
+    fn assign(&mut self) -> Option<Box<Node>> {
+        let mut node: Option<Box<Node>> = self.equality();
+
+        if let Ok(_) = self.cur_token().expect_symbol("=") {
+            let _ = &self.next_token();
+            node = Node::create(NodeKind::Assign, node, self.assign());
+            return node
+        }
+
+        return node
     }
 
     fn equality(&mut self) -> Option<Box<Node>> {
@@ -187,12 +227,21 @@ impl<'a> Parser<'a> {
                 Ok(_) => &self.next_token(),
                 Err(e) => {
                     cc_util::errors(&[&self.origin_formula, &e]);
-                    return None;
+                    //return None;
                 },
             };
 
             return node;
         }
+
+        if let Ok(lvar) = self.cur_token().expect_ident() {
+            let offset = ((lvar.chars().next().unwrap() as i32) - ('a' as i32) + 1) * 8;
+            let node = Node::create(NodeKind::Lvar(offset), None, None);
+            let _ = &self.next_token();
+
+            return node;
+        }
+
 
         match self.cur_token().expect_number() {
             Ok(n) => {
@@ -202,7 +251,7 @@ impl<'a> Parser<'a> {
             },
             Err(e) => {
                 cc_util::errors(&[&self.origin_formula, &e]);
-                return None;
+                //return None;
             },
         };
     }
@@ -210,55 +259,3 @@ impl<'a> Parser<'a> {
 
 
 
-
-
-pub fn generate(nd: Option<Box<Node>>) {
-    let node = match nd {
-        Some(n) => n,
-        None => return,
-    };
-
-    if let NodeKind::Num(n) = node.kind {
-        println!("  push {}", n);
-        return;
-    }
-
-    generate(node.lhs);
-    generate(node.rhs);
-
-    println!("  pop rdi");
-    println!("  pop rax");
-
-    match node.kind {
-        NodeKind::Add => println!("  add rax, rdi"),
-        NodeKind::Sub => println!("  sub rax, rdi"),
-        NodeKind::Mul => println!("  imul rax, rdi"),
-        NodeKind::Div => { 
-            println!("  cqo");
-            println!("  idiv rdi");
-        },
-        NodeKind::Eq => {
-            println!("  cmp rax, rdi");
-            println!("  sete al");
-            println!("  movzb rax, al");
-        },
-        NodeKind::Ne => {
-            println!("  cmp rax, rdi");
-            println!("  setne al");
-            println!("  movzb rax, al");
-        },
-        NodeKind::Lt => {
-            println!("  cmp rax, rdi");
-            println!("  setl al");
-            println!("  movzb rax, al");
-        },
-        NodeKind::Le => {
-            println!("  cmp rax, rdi");
-            println!("  setle al");
-            println!("  movzb rax, al");
-        },
-        _ => {}
-    }
-
-    println!("  push rax");
-}
