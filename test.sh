@@ -68,4 +68,8 @@ try 6 "a=b=3; a+b;"
 try 3 'foo=3; foo;'
 try 8 'foo123=3; bar=5; foo123+bar;'
 
+try 1 'return 1; 2; 3;'
+try 2 '1; return 2; 3;'
+try 3 '1; 2; return 3;'
+
 echo OK

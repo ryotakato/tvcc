@@ -21,12 +21,22 @@ impl Generator {
     }
 
     pub fn generate(&self, nd: Option<Box<Node>>) {
+
         let node = match nd {
             Some(n) => n,
             None => return,
         };
 
         match node.kind {
+            NodeKind::Return => {
+                self.generate(node.lhs);
+                println!("  pop rax");
+                println!("  mov rsp, rbp");
+                println!("  pop rbp");
+                println!("  ret");
+                println!();
+                return;
+            },
             NodeKind::Num(n) => {
                 println!("  push {}", n);
                 println!();
@@ -49,7 +59,6 @@ impl Generator {
                 println!("  push rdi");
                 println!();
                 return;
-
             },
             _ => {}
         }

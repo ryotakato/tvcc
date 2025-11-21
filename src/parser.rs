@@ -4,6 +4,7 @@ use crate::cc_util;
 
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub enum NodeKind {
     Add, // +
     Sub, // -
@@ -16,8 +17,10 @@ pub enum NodeKind {
     Assign, // =
     Lvar(i32), // local variables + offset
     Num(i32), // integer + value
+    Return, // return
 }
 
+#[derive(Debug)]
 pub struct Node {
     pub kind: NodeKind,
     pub lhs: Option<Box<Node>>,
@@ -102,7 +105,15 @@ impl<'a> Parser<'a> {
     }
 
     fn stmt(&mut self) -> Option<Box<Node>> {
-        let node: Option<Box<Node>> = self.expr();
+
+        let node: Option<Box<Node>> = match self.cur_token().at_return() {
+            true => {
+                let _ = &self.next_token();
+                Node::create(NodeKind::Return, self.expr(), None)
+            },
+            false => self.expr(),
+        };
+
 
         match self.cur_token().expect_symbol(";") {
             Ok(_n) => {

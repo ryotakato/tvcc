@@ -4,8 +4,9 @@ use crate::cc_util;
 #[derive(Debug)]
 pub enum TokenKind {
     Reserved(String), // symbol
-    Ident(String), // identifier
-    Num(String), // number
+    Ident(String),    // identifier
+    Num(String),      // number
+    Return,           // return
     Eof               // the end of input
 }
 
@@ -39,6 +40,14 @@ impl Token {
     pub fn at_eof(&self) -> bool {
         match self.kind {
             TokenKind::Eof => true,
+            _ => false
+        }
+    }
+
+    // check return
+    pub fn at_return(&self) -> bool {
+        match self.kind {
+            TokenKind::Return => true,
             _ => false
         }
     }
@@ -171,7 +180,12 @@ impl Tokeniser {
                         continue;
                     },
                     _ => {
-                        token_list.push_back(Token::new(TokenKind::Ident(self.formula[start_loc..i].to_string()), start_loc));
+                        let name = self.formula[start_loc..i].to_string();
+                        if name == "return" {
+                            token_list.push_back(Token::new(TokenKind::Return, start_loc));
+                        } else {
+                            token_list.push_back(Token::new(TokenKind::Ident(name), start_loc));
+                        }
                         start_identifier_flag = false;
                         start_loc = 0;
                     }
