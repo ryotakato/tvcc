@@ -1,4 +1,4 @@
-use crate::tokeniser::{Token, TokenListIterator,TokenList};
+use crate::tokeniser::{Token, TokenListIterator, TokenList, TokenKind};
 //use crate::cc_util::{error, errors};
 use crate::cc_util;
 
@@ -18,6 +18,9 @@ pub enum NodeKind {
     Lvar(i32), // local variables + offset
     Num(i32), // integer + value
     Return, // return
+    If, // if
+    While, // while
+    For, // for
 }
 
 #[derive(Debug)]
@@ -25,18 +28,35 @@ pub struct Node {
     pub kind: NodeKind,
     pub lhs: Option<Box<Node>>,
     pub rhs: Option<Box<Node>>,
+    pub cond: Option<Box<Node>>,
+    pub then: Option<Box<Node>>,
+    pub else_then: Option<Box<Node>>,
 }
 
 impl Node {
-    fn new(kind: NodeKind, lhs: Option<Box<Node>>, rhs: Option<Box<Node>>) -> Node {
+    fn new(kind: NodeKind, lhs: Option<Box<Node>>, rhs: Option<Box<Node>>, 
+        cond: Option<Box<Node>>, then: Option<Box<Node>>, else_then: Option<Box<Node>>) -> Node {
         Node {
             kind,
             lhs,
             rhs,
+            cond,
+            then,
+            else_then,
         }
     }
     fn create(kind: NodeKind, lhs: Option<Box<Node>>, rhs: Option<Box<Node>>) -> Option<Box<Node>> {
-        Some(Box::new(Node::new(kind, lhs, rhs)))
+        Some(Box::new(Node::new(kind, lhs, rhs, None, None, None)))
+    }
+    fn create_if_node(cond: Option<Box<Node>>, then: Option<Box<Node>>, else_then: Option<Box<Node>>) -> Option<Box<Node>> {
+        Some(Box::new(Node { 
+            kind: NodeKind::If,
+            lhs: None,
+            rhs: None,
+            cond,
+            then,
+            else_then,
+        }))
     }
 }
 
@@ -106,27 +126,90 @@ impl<'a> Parser<'a> {
 
     fn stmt(&mut self) -> Option<Box<Node>> {
 
-        let node: Option<Box<Node>> = match self.cur_token().at_return() {
-            true => {
+        let cur = self.cur_token();
+
+        match cur {
+            // "return" ";"
+            Token { kind: TokenKind::Return, .. } => {
                 let _ = &self.next_token();
-                Node::create(NodeKind::Return, self.expr(), None)
+                let node = Node::create(NodeKind::Return, self.expr(), None);
+                self.stmt_expect_symbol(";");
+                return node;
             },
-            false => self.expr(),
-        };
+            // "if" "(" expr ")" stmt ("else" stmt)?
+            Token { kind: TokenKind::If, .. } => {
 
 
-        match self.cur_token().expect_symbol(";") {
+                let _ = &self.next_token();
+                self.stmt_expect_symbol("(");
+                // cond
+                let cond = self.expr();
+
+                self.stmt_expect_symbol(")");
+
+                // then
+                let then = self.stmt();
+
+                // else_then
+                match self.cur_token().at_else() {
+                    true => {
+                        let _ = &self.next_token();
+                        let else_then = self.stmt();
+                        let node = Node::create_if_node(cond, then, else_then);
+                        return node;
+                    },
+                    false => {
+                        let node = Node::create_if_node(cond, then, None);
+                        return node;
+                    }
+                }
+
+            },
+            // expr ";"
+            _ => {
+                let node = self.expr();
+                self.stmt_expect_symbol(";");
+                return node;
+            }
+
+
+        }
+
+        //let node: Option<Box<Node>> = match self.cur_token().at_return() {
+        //    true => {
+        //        let _ = &self.next_token();
+        //        Node::create(NodeKind::Return, self.expr(), None)
+        //    },
+        //    false => self.expr(),
+        //};
+
+
+        //match self.cur_token().expect_symbol(";") {
+        //    Ok(_n) => {
+        //        let _ = &self.next_token();
+        //        return node;
+        //    },
+        //    Err(e) => {
+        //        cc_util::errors(&[&self.origin_formula, &e]);
+        //        //return None;
+        //    },
+        //};
+
+    }
+
+    fn stmt_expect_symbol(&mut self, symbol: &str) {
+
+        match self.cur_token().expect_symbol(symbol) {
             Ok(_n) => {
                 let _ = &self.next_token();
-                return node;
             },
             Err(e) => {
                 cc_util::errors(&[&self.origin_formula, &e]);
-                //return None;
             },
         };
-
     }
+
+
 
     fn expr(&mut self) -> Option<Box<Node>> {
         self.assign()

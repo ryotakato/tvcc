@@ -7,6 +7,10 @@ pub enum TokenKind {
     Ident(String),    // identifier
     Num(String),      // number
     Return,           // return
+    If,               // if
+    Else,             // else
+    While,            // while
+    For,              // for
     Eof               // the end of input
 }
 
@@ -48,6 +52,14 @@ impl Token {
     pub fn at_return(&self) -> bool {
         match self.kind {
             TokenKind::Return => true,
+            _ => false
+        }
+    }
+
+    // check else
+    pub fn at_else(&self) -> bool {
+        match self.kind {
+            TokenKind::Else => true,
             _ => false
         }
     }
@@ -180,11 +192,14 @@ impl Tokeniser {
                         continue;
                     },
                     _ => {
-                        let name = self.formula[start_loc..i].to_string();
-                        if name == "return" {
-                            token_list.push_back(Token::new(TokenKind::Return, start_loc));
-                        } else {
-                            token_list.push_back(Token::new(TokenKind::Ident(name), start_loc));
+                        let name = &self.formula[start_loc..i];
+                        match name {
+                            "return" => token_list.push_back(Token::new(TokenKind::Return, start_loc)),
+                            "if" => token_list.push_back(Token::new(TokenKind::If, start_loc)),
+                            "else" => token_list.push_back(Token::new(TokenKind::Else, start_loc)),
+                            "while" => token_list.push_back(Token::new(TokenKind::While, start_loc)),
+                            "for" => token_list.push_back(Token::new(TokenKind::For, start_loc)),
+                            _ => token_list.push_back(Token::new(TokenKind::Ident(name.to_string()), start_loc)),
                         }
                         start_identifier_flag = false;
                         start_loc = 0;

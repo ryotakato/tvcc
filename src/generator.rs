@@ -2,16 +2,19 @@ use crate::parser::{Node, NodeKind};
 use crate::cc_util;
 
 pub struct Generator {
+    count: usize
 }
 
 
 impl Generator {
 
     pub fn new() -> Generator {
-        Generator {}
+        Generator {
+            count: 0
+        }
     }
 
-    pub fn generate_nodes(&self, nodes: Vec<Option<Box<Node>>>) {
+    pub fn generate_nodes(&mut self, nodes: Vec<Option<Box<Node>>>) {
         for nd in nodes {
             self.generate(nd);
 
@@ -20,7 +23,7 @@ impl Generator {
         }
     }
 
-    pub fn generate(&self, nd: Option<Box<Node>>) {
+    pub fn generate(&mut self, nd: Option<Box<Node>>) {
 
         let node = match nd {
             Some(n) => n,
@@ -28,6 +31,22 @@ impl Generator {
         };
 
         match node.kind {
+            NodeKind::If => {
+                self.count = self.count + 1;
+                self.generate(node.cond);
+                println!("  pop rax");
+                println!("  cmp rax, 0");
+                println!("  je .L.else.{}", self.count);
+                self.generate(node.then);
+                println!("  jmp .L.end.{}", self.count);
+                println!(".L.else.{}:", self.count);
+                if let Some(_) = node.else_then {
+                    self.generate(node.else_then);
+                }
+                println!(".L.end.{}:", self.count);
+                println!();
+                return;
+            },
             NodeKind::Return => {
                 self.generate(node.lhs);
                 println!("  pop rax");
