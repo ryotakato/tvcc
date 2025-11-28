@@ -19,8 +19,7 @@ pub enum NodeKind {
     Num(i32), // integer + value
     Return, // return
     If, // if
-    While, // while
-    For, // for
+    For, // for or while
 }
 
 #[derive(Debug)]
@@ -31,11 +30,14 @@ pub struct Node {
     pub cond: Option<Box<Node>>,
     pub then: Option<Box<Node>>,
     pub else_then: Option<Box<Node>>,
+    pub init: Option<Box<Node>>,
+    pub inc: Option<Box<Node>>,
 }
 
 impl Node {
     fn new(kind: NodeKind, lhs: Option<Box<Node>>, rhs: Option<Box<Node>>, 
-        cond: Option<Box<Node>>, then: Option<Box<Node>>, else_then: Option<Box<Node>>) -> Node {
+        cond: Option<Box<Node>>, then: Option<Box<Node>>, else_then: Option<Box<Node>>,
+        init: Option<Box<Node>>, inc: Option<Box<Node>>) -> Node {
         Node {
             kind,
             lhs,
@@ -43,10 +45,12 @@ impl Node {
             cond,
             then,
             else_then,
+            init,
+            inc,
         }
     }
     fn create(kind: NodeKind, lhs: Option<Box<Node>>, rhs: Option<Box<Node>>) -> Option<Box<Node>> {
-        Some(Box::new(Node::new(kind, lhs, rhs, None, None, None)))
+        Some(Box::new(Node::new(kind, lhs, rhs, None, None, None, None, None)))
     }
     fn create_if_node(cond: Option<Box<Node>>, then: Option<Box<Node>>, else_then: Option<Box<Node>>) -> Option<Box<Node>> {
         Some(Box::new(Node { 
@@ -56,6 +60,32 @@ impl Node {
             cond,
             then,
             else_then,
+            init: None,
+            inc: None,
+        }))
+    }
+    fn create_for_node(init: Option<Box<Node>>, cond: Option<Box<Node>>, inc: Option<Box<Node>>, then: Option<Box<Node>>) -> Option<Box<Node>> {
+        Some(Box::new(Node { 
+            kind: NodeKind::For,
+            lhs: None,
+            rhs: None,
+            cond,
+            then,
+            else_then: None,
+            init,
+            inc,
+        }))
+    }
+    fn create_while_node(cond: Option<Box<Node>>, then: Option<Box<Node>>) -> Option<Box<Node>> {
+        Some(Box::new(Node { 
+            kind: NodeKind::For,
+            lhs: None,
+            rhs: None,
+            cond,
+            then,
+            else_then: None,
+            init: None,
+            inc: None,
         }))
     }
 }
@@ -164,6 +194,56 @@ impl<'a> Parser<'a> {
                     }
                 }
 
+            },
+            // "for" "(" expr? ";" expr? ";" expr? ")" stmt
+            Token { kind: TokenKind::For, .. } => {
+
+                let _ = &self.next_token();
+                self.stmt_expect_symbol("(");
+
+                // init
+                let init = match self.cur_token().expect_symbol(";") {
+                    Ok(_n) => None,
+                    Err(_) => self.expr(),
+                };
+
+                // cond
+                let _ = &self.next_token();
+                let cond = match self.cur_token().expect_symbol(";") {
+                    Ok(_n) => None,
+                    Err(_) => self.expr(),
+                };
+
+                // inc
+                let _ = &self.next_token();
+                let inc = match self.cur_token().expect_symbol(")") {
+                    Ok(_n) => None,
+                    Err(_) => self.expr(),
+                };
+
+                // then
+                let _ = &self.next_token();
+                let then = self.stmt();
+
+                let node = Node::create_for_node(init, cond, inc, then);
+                return node;
+
+            },
+            // "while" "(" expr ")" stmt
+            Token { kind: TokenKind::While, .. } => {
+
+                let _ = &self.next_token();
+                self.stmt_expect_symbol("(");
+                // cond
+                let cond = self.expr();
+
+                self.stmt_expect_symbol(")");
+
+                // then
+                let then = self.stmt();
+
+                let node = Node::create_while_node(cond, then);
+                return node;
             },
             // expr ";"
             _ => {

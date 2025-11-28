@@ -47,6 +47,26 @@ impl Generator {
                 println!();
                 return;
             },
+            NodeKind::For => {
+                self.count = self.count + 1;
+                self.generate(node.init);
+                println!(".L.begin.{}:", self.count);
+                if let Some(_) = node.cond {
+                    self.generate(node.cond);
+                    println!("  pop rax");
+                    println!("  cmp rax, 0");
+                    println!("  je .L.end.{}", self.count);
+                }
+                self.generate(node.then);
+                if let Some(_) = node.inc {
+                    self.generate(node.inc);
+                }
+                println!("  jmp .L.begin.{}", self.count);
+                println!(".L.end.{}:", self.count);
+                println!();
+                return;
+
+            },
             NodeKind::Return => {
                 self.generate(node.lhs);
                 println!("  pop rax");

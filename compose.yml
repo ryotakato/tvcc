@@ -9,3 +9,7 @@ services:
       - ${PWD}:/tvcc
     working_dir: /tvcc
     command: ./test.sh
+    cap_add: 
+      - SYS_PTRACE
+    security_opt: 
+      - seccomp=unconfined
