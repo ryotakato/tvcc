@@ -67,6 +67,12 @@ impl Generator {
                 return;
 
             },
+            NodeKind::Block => {
+                for b in node.body {
+                    self.generate(b);
+                }
+                return;
+            },
             NodeKind::Return => {
                 self.generate(node.lhs);
                 println!("  pop rax");

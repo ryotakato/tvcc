@@ -23,64 +23,68 @@ try() {
   fi
 }
 
-try 0 "0;"
-try 42 "42;"
-try 21 "5+20-4;"
-try 41 " 12 + 34 - 5 ;"
-try 47 "5+6*7;"
-try 15 "5*(9-6);"
-try 4 "(3+5)/2;"
-try 10 "-10+20;"
-try 10 "- -10;"
-try 10 "- - +10;"
+try 0 "{return 0;}"
+try 42 "{return 42;}"
+try 21 "{return 5+20-4;}"
+try 41 "{return 12 + 34 - 5 ;}"
+try 47 "{return 5+6*7;}"
+try 15 "{return 5*(9-6);}"
+try 4 "{return (3+5)/2;}"
+try 10 "{return -10+20;}"
+try 10 "{return - -10;}"
+try 10 "{return - - +10;}"
 
-try 0 "0==1;"
-try 1 "42==42;"
-try 1 "0!=1;"
-try 0 "42!=42;"
+try 0 "{return 0==1;}"
+try 1 "{return 42==42;}"
+try 1 "{return 0!=1;}"
+try 0 "{return 42!=42;}"
 
-try 1 "0<1;"
-try 0 "1<1;"
-try 0 "2<1;"
-try 1 "0<=1;"
-try 1 "1<=1;"
-try 0 "2<=1;"
+try 1 "{return 0<1;}"
+try 0 "{return 1<1;}"
+try 0 "{return 2<1;}"
+try 1 "{return 0<=1;}"
+try 1 "{return 1<=1;}"
+try 0 "{return 2<=1;}"
 
-try 1 "1>0;"
-try 0 "1>1;"
-try 0 "1>2;"
-try 1 "1>=0;"
-try 1 "1>=1;"
-try 0 "1>=2;"
+try 1 "{return 1>0;}"
+try 0 "{return 1>1;}"
+try 0 "{return 1>2;}"
+try 1 "{return 1>=0;}"
+try 1 "{return 1>=1;}"
+try 0 "{return 1>=2;}"
 
-try 1 "a=1;a;"
-try 1 "b=1;b;"
-try 1 "z=1;z;"
-try 3 "r=1;t=2;o=r+t;o;"
-try 9 "t=4; t = t + 5;"
+try 1 " { a=1; return a;}"
+try 1 " { b=1;return b;}"
+try 1 " { z=1;return z;}"
+try 3 " { r=1;t=2;o=r+t;return o;}"
+try 9 " { t=4; t = t + 5;return t;}"
 
-try 3 "1; 2; 3;"
+try 3 "{1; 2; return 3;}"
 
-try 3 "a=3; a;"
-try 8 "a=3; z=5; a+z;"
-try 6 "a=b=3; a+b;"
+try 3 "{ a=3; return a; }"
+try 8 "{ a=3; z=5; return a+z; } "
+try 6 "{ a=b=3; return a+b; } "
 
-try 3 'foo=3; foo;'
-try 8 'foo123=3; bar=5; foo123+bar;'
+try 3 ' { foo=3; return foo; }'
+try 8 ' { foo123=3; bar=5; return foo123+bar; }'
 
-try 1 'return 1; 2; 3;'
-try 2 '1; return 2; 3;'
-try 3 '1; 2; return 3;'
+try 1 ' { return 1; 2; 3; } '
+try 2 ' { 1; return 2; 3; } '
+try 3 ' { 1; 2; return 3; } '
 
-try 3 'if (0) return 2; return 3;'
-try 3 'if (1-1) return 2; return 3;'
-try 2 'if (1) return 2; return 3;'
-try 2 'if (2-1) return 2; return 3;'
-try 4 'if (0) return 3; else return 4;'
-try 3 'if (1) return 3; else return 4;'
+try 3 '{ {1; {2;} return 3;} }'
 
-try 55 'i=0; j=0; for (i=0; i<=10; i=i+1) j=i+j; return j;'
-try 3 'for (;;) return 3; return 5;'
-try 10 'i=0; while(i<10) i=i+1; return i;'
+try 5 '{ ;;; return 5;}'
+
+try 3 '{ if (0) return 2; return 3; }'
+try 3 '{ if (1-1) return 2; return 3; }'
+try 2 '{ if (1) return 2; return 3; }'
+try 2 '{ if (2-1) return 2; return 3; }'
+try 4 '{ if (0) return 3; else return 4; }'
+try 3 '{ if (1) return 3; else return 4; }'
+
+try 55 '{ i=0; j=0; for (i=0; i<=10; i=i+1) j=i+j; return j; }'
+try 3 ' { for (;;) return 3; return 5; }'
+try 10 '{ i=0; while(i<10) i=i+1; return i; }'
 
 echo OK

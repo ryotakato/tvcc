@@ -244,7 +244,7 @@ impl Tokeniser {
 
             // 1 byte char
             match &self.formula[i..i+1].chars().next().unwrap() {
-                '+'|'-'|'*'|'/'|'('|')'|'<'|'>'|'='|';' => {
+                '+'|'-'|'*'|'/'|'('|')'|'<'|'>'|'='|';'|'{'|'}' => {
                     token_list.push_back(Token::new(TokenKind::Reserved(self.formula[i..i+1].to_string()), i));
                     i = i+1;
                     continue;
