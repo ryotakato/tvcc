@@ -6,12 +6,17 @@ TARGET=./target/tmp
 
 mkdir -p "${TARGET}"
 
+cat <<EOF | gcc -xc -c -o "${TARGET}/tmp2.o" -
+int ret3() { return 3; }
+int ret5() { return 5; }
+EOF
+
 try() {
   expected="$1"
   input="$2"
 
   ${CMD} "$input" > "${TARGET}/tmp.s"
-  gcc -o "${TARGET}/tmp" "${TARGET}/tmp.s"
+  gcc -o "${TARGET}/tmp" "${TARGET}/tmp.s" "${TARGET}/tmp2.o"
   "${TARGET}/tmp"
   actual="$?"
 
@@ -86,5 +91,8 @@ try 3 '{ if (1) return 3; else return 4; }'
 try 55 '{ i=0; j=0; for (i=0; i<=10; i=i+1) j=i+j; return j; }'
 try 3 ' { for (;;) return 3; return 5; }'
 try 10 '{ i=0; while(i<10) i=i+1; return i; }'
+
+try 3 '{ return ret3(); }'
+try 5 '{ return ret5(); }'
 
 echo OK

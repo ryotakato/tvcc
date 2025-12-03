@@ -105,6 +105,13 @@ impl Generator {
                 println!();
                 return;
             },
+            NodeKind::FuncCall => {
+                println!("  mov rax, 0");
+                println!("  call {}", &node.func_name);
+                println!("  push rax");
+                println!();
+                return;
+            },
             _ => {}
         }
 

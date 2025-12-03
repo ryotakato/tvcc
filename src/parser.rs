@@ -21,6 +21,7 @@ pub enum NodeKind {
     If, // if
     For, // for or while
     Block, // block
+    FuncCall, // func call
 }
 
 #[derive(Debug)]
@@ -34,12 +35,14 @@ pub struct Node {
     pub init: Option<Box<Node>>,
     pub inc: Option<Box<Node>>,
     pub body: Vec<Option<Box<Node>>>,
+    pub func_name: String,
 }
 
 impl Node {
     fn new(kind: NodeKind, lhs: Option<Box<Node>>, rhs: Option<Box<Node>>, 
         cond: Option<Box<Node>>, then: Option<Box<Node>>, else_then: Option<Box<Node>>,
-        init: Option<Box<Node>>, inc: Option<Box<Node>>, body: Vec<Option<Box<Node>>>) -> Node {
+        init: Option<Box<Node>>, inc: Option<Box<Node>>, body: Vec<Option<Box<Node>>>,
+        func_name: String) -> Node {
         Node {
             kind,
             lhs,
@@ -50,10 +53,11 @@ impl Node {
             init,
             inc,
             body,
+            func_name,
         }
     }
     fn create(kind: NodeKind, lhs: Option<Box<Node>>, rhs: Option<Box<Node>>) -> Option<Box<Node>> {
-        Some(Box::new(Node::new(kind, lhs, rhs, None, None, None, None, None, Vec::new())))
+        Some(Box::new(Node::new(kind, lhs, rhs, None, None, None, None, None, Vec::new(), String::new())))
     }
     fn create_if_node(cond: Option<Box<Node>>, then: Option<Box<Node>>, else_then: Option<Box<Node>>) -> Option<Box<Node>> {
         Some(Box::new(Node { 
@@ -66,6 +70,7 @@ impl Node {
             init: None,
             inc: None,
             body: Vec::new(),
+            func_name: String::new(),
         }))
     }
     fn create_for_node(init: Option<Box<Node>>, cond: Option<Box<Node>>, inc: Option<Box<Node>>, then: Option<Box<Node>>) -> Option<Box<Node>> {
@@ -79,6 +84,7 @@ impl Node {
             init,
             inc,
             body: Vec::new(),
+            func_name: String::new(),
         }))
     }
     fn create_while_node(cond: Option<Box<Node>>, then: Option<Box<Node>>) -> Option<Box<Node>> {
@@ -92,6 +98,7 @@ impl Node {
             init: None,
             inc: None,
             body: Vec::new(),
+            func_name: String::new(),
         }))
     }
     fn create_block_node(body: Vec<Option<Box<Node>>>) -> Option<Box<Node>> {
@@ -105,6 +112,21 @@ impl Node {
             init: None,
             inc: None,
             body,
+            func_name: String::new(),
+        }))
+    }
+    fn create_func_call_node(func_name: String) -> Option<Box<Node>> {
+        Some(Box::new(Node { 
+            kind: NodeKind::FuncCall,
+            lhs: None,
+            rhs: None,
+            cond: None,
+            then: None,
+            else_then: None,
+            init: None,
+            inc: None,
+            body: Vec::new(),
+            func_name,
         }))
     }
 }
@@ -472,10 +494,31 @@ impl<'a> Parser<'a> {
             return node;
         }
 
-        if let Ok(lvar) = self.cur_token().expect_ident() {
-            let offset = self.local_variable.find_offset(lvar.to_string());
-            let node = Node::create(NodeKind::Lvar(offset), None, None);
+        if let Ok(name) = self.cur_token().expect_ident() {
+            let name = name.to_string();
             let _ = &self.next_token();
+
+            let node = match self.cur_token().expect_symbol("(") {
+                Ok(_) => {
+                    // func call
+                    let _ = &self.next_token();
+
+                    match self.cur_token().expect_symbol(")") {
+                        Ok(_) => &self.next_token(),
+                        Err(e) => {
+                            cc_util::errors(&[&self.origin_formula, &e]);
+                            //return None;
+                        },
+                    };
+
+                    Node::create_func_call_node(name)
+                },
+                Err(_) => {
+                    // local variable
+                    let offset = self.local_variable.find_offset(name);
+                    Node::create(NodeKind::Lvar(offset), None, None)
+                }
+            };
 
             return node;
         }
