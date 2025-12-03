@@ -36,13 +36,14 @@ pub struct Node {
     pub inc: Option<Box<Node>>,
     pub body: Vec<Option<Box<Node>>>,
     pub func_name: String,
+    pub func_args: Vec<Option<Box<Node>>>,
 }
 
 impl Node {
     fn new(kind: NodeKind, lhs: Option<Box<Node>>, rhs: Option<Box<Node>>, 
         cond: Option<Box<Node>>, then: Option<Box<Node>>, else_then: Option<Box<Node>>,
         init: Option<Box<Node>>, inc: Option<Box<Node>>, body: Vec<Option<Box<Node>>>,
-        func_name: String) -> Node {
+        func_name: String, func_args: Vec<Option<Box<Node>>>) -> Node {
         Node {
             kind,
             lhs,
@@ -54,10 +55,11 @@ impl Node {
             inc,
             body,
             func_name,
+            func_args,
         }
     }
     fn create(kind: NodeKind, lhs: Option<Box<Node>>, rhs: Option<Box<Node>>) -> Option<Box<Node>> {
-        Some(Box::new(Node::new(kind, lhs, rhs, None, None, None, None, None, Vec::new(), String::new())))
+        Some(Box::new(Node::new(kind, lhs, rhs, None, None, None, None, None, Vec::new(), String::new(), Vec::new())))
     }
     fn create_if_node(cond: Option<Box<Node>>, then: Option<Box<Node>>, else_then: Option<Box<Node>>) -> Option<Box<Node>> {
         Some(Box::new(Node { 
@@ -71,6 +73,7 @@ impl Node {
             inc: None,
             body: Vec::new(),
             func_name: String::new(),
+            func_args: Vec::new(),
         }))
     }
     fn create_for_node(init: Option<Box<Node>>, cond: Option<Box<Node>>, inc: Option<Box<Node>>, then: Option<Box<Node>>) -> Option<Box<Node>> {
@@ -85,6 +88,7 @@ impl Node {
             inc,
             body: Vec::new(),
             func_name: String::new(),
+            func_args: Vec::new(),
         }))
     }
     fn create_while_node(cond: Option<Box<Node>>, then: Option<Box<Node>>) -> Option<Box<Node>> {
@@ -99,6 +103,7 @@ impl Node {
             inc: None,
             body: Vec::new(),
             func_name: String::new(),
+            func_args: Vec::new(),
         }))
     }
     fn create_block_node(body: Vec<Option<Box<Node>>>) -> Option<Box<Node>> {
@@ -113,9 +118,10 @@ impl Node {
             inc: None,
             body,
             func_name: String::new(),
+            func_args: Vec::new(),
         }))
     }
-    fn create_func_call_node(func_name: String) -> Option<Box<Node>> {
+    fn create_func_call_node(func_name: String, func_args: Vec<Option<Box<Node>>>) -> Option<Box<Node>> {
         Some(Box::new(Node { 
             kind: NodeKind::FuncCall,
             lhs: None,
@@ -127,6 +133,7 @@ impl Node {
             inc: None,
             body: Vec::new(),
             func_name,
+            func_args,
         }))
     }
 }
@@ -501,17 +508,7 @@ impl<'a> Parser<'a> {
             let node = match self.cur_token().expect_symbol("(") {
                 Ok(_) => {
                     // func call
-                    let _ = &self.next_token();
-
-                    match self.cur_token().expect_symbol(")") {
-                        Ok(_) => &self.next_token(),
-                        Err(e) => {
-                            cc_util::errors(&[&self.origin_formula, &e]);
-                            //return None;
-                        },
-                    };
-
-                    Node::create_func_call_node(name)
+                    self.func_call(name)
                 },
                 Err(_) => {
                     // local variable
@@ -535,6 +532,30 @@ impl<'a> Parser<'a> {
                 //return None;
             },
         };
+    }
+
+
+
+    fn func_call(&mut self, name: String) -> Option<Box<Node>> {
+        //println!("func call {}", &name);
+
+        let _ = &self.next_token();
+
+        let mut args: Vec<Option<Box<Node>>> = Vec::new();
+
+        while let Err(_) = self.cur_token().expect_symbol(")") {
+            //println!("== 1: func args {:?}", &self.cur_token());
+            args.push(self.assign());
+            //println!("== 2: func args {:?}", &self.cur_token());
+
+            if let Ok(_) = self.cur_token().expect_symbol(",") {
+                let _ = &self.next_token();
+            }
+        }
+
+        let _ = &self.next_token(); // skip ")"
+
+        Node::create_func_call_node(name, args)
     }
 }
 

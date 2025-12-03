@@ -106,6 +106,22 @@ impl Generator {
                 return;
             },
             NodeKind::FuncCall => {
+
+                let args_registers = vec!["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
+                let mut argc = 0;
+
+                for arg in node.func_args {
+                    self.generate(arg);
+                    argc = argc + 1;
+                    if argc == args_registers.len() {
+                        break;
+                    }
+                }
+
+                for i in (0..argc).rev() { // reverse, because stack is FIFO
+                    println!("  pop {}", &args_registers[i]);
+                }
+
                 println!("  mov rax, 0");
                 println!("  call {}", &node.func_name);
                 println!("  push rax");
