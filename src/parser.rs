@@ -5,136 +5,28 @@ use crate::cc_util;
 use std::collections::HashMap;
 
 #[derive(Debug)]
-pub enum NodeKind {
-    Add, // +
-    Sub, // -
-    Mul, // *
-    Div, // /
-    Eq,  // ==
-    Ne,  // !=
-    Lt,  // <
-    Le,  // <=
-    Assign, // =
-    Lvar(i32), // local variables + offset
-    Num(i32), // integer + value
-    Return, // return
-    If, // if
-    For, // for or while
-    Block, // block
-    FuncCall, // func call
-}
-
-#[derive(Debug)]
-pub struct Node {
-    pub kind: NodeKind,
-    pub lhs: Option<Box<Node>>,
-    pub rhs: Option<Box<Node>>,
-    pub cond: Option<Box<Node>>,
-    pub then: Option<Box<Node>>,
-    pub else_then: Option<Box<Node>>,
-    pub init: Option<Box<Node>>,
-    pub inc: Option<Box<Node>>,
-    pub body: Vec<Option<Box<Node>>>,
-    pub func_name: String,
-    pub func_args: Vec<Option<Box<Node>>>,
+pub enum Node {
+    Add { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // +
+    Sub { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // -
+    Mul { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // *
+    Div { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // /
+    Eq { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> },  // ==
+    Ne { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> },  // !=
+    Lt { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> },  // <
+    Le { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> },  // <=
+    Assign { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // =
+    Lvar { offset: i32 }, // local variables + offset
+    Num {value: i32 }, // integer + value
+    Return { lhs: Option<Box<Node>> }, // return
+    If { cond: Option<Box<Node>>, then: Option<Box<Node>>, else_then: Option<Box<Node>> }, // if
+    For { init: Option<Box<Node>>, cond: Option<Box<Node>>, inc: Option<Box<Node>>, then: Option<Box<Node>>}, // for or while
+    Block { body: Vec<Option<Box<Node>>> }, // block
+    FuncCall { name: String, args: Vec<Option<Box<Node>>> }, // func call
 }
 
 impl Node {
-    fn new(kind: NodeKind, lhs: Option<Box<Node>>, rhs: Option<Box<Node>>, 
-        cond: Option<Box<Node>>, then: Option<Box<Node>>, else_then: Option<Box<Node>>,
-        init: Option<Box<Node>>, inc: Option<Box<Node>>, body: Vec<Option<Box<Node>>>,
-        func_name: String, func_args: Vec<Option<Box<Node>>>) -> Node {
-        Node {
-            kind,
-            lhs,
-            rhs,
-            cond,
-            then,
-            else_then,
-            init,
-            inc,
-            body,
-            func_name,
-            func_args,
-        }
-    }
-    fn create(kind: NodeKind, lhs: Option<Box<Node>>, rhs: Option<Box<Node>>) -> Option<Box<Node>> {
-        Some(Box::new(Node::new(kind, lhs, rhs, None, None, None, None, None, Vec::new(), String::new(), Vec::new())))
-    }
-    fn create_if_node(cond: Option<Box<Node>>, then: Option<Box<Node>>, else_then: Option<Box<Node>>) -> Option<Box<Node>> {
-        Some(Box::new(Node { 
-            kind: NodeKind::If,
-            lhs: None,
-            rhs: None,
-            cond,
-            then,
-            else_then,
-            init: None,
-            inc: None,
-            body: Vec::new(),
-            func_name: String::new(),
-            func_args: Vec::new(),
-        }))
-    }
-    fn create_for_node(init: Option<Box<Node>>, cond: Option<Box<Node>>, inc: Option<Box<Node>>, then: Option<Box<Node>>) -> Option<Box<Node>> {
-        Some(Box::new(Node { 
-            kind: NodeKind::For,
-            lhs: None,
-            rhs: None,
-            cond,
-            then,
-            else_then: None,
-            init,
-            inc,
-            body: Vec::new(),
-            func_name: String::new(),
-            func_args: Vec::new(),
-        }))
-    }
-    fn create_while_node(cond: Option<Box<Node>>, then: Option<Box<Node>>) -> Option<Box<Node>> {
-        Some(Box::new(Node { 
-            kind: NodeKind::For,
-            lhs: None,
-            rhs: None,
-            cond,
-            then,
-            else_then: None,
-            init: None,
-            inc: None,
-            body: Vec::new(),
-            func_name: String::new(),
-            func_args: Vec::new(),
-        }))
-    }
-    fn create_block_node(body: Vec<Option<Box<Node>>>) -> Option<Box<Node>> {
-        Some(Box::new(Node { 
-            kind: NodeKind::Block,
-            lhs: None,
-            rhs: None,
-            cond: None,
-            then: None,
-            else_then: None,
-            init: None,
-            inc: None,
-            body,
-            func_name: String::new(),
-            func_args: Vec::new(),
-        }))
-    }
-    fn create_func_call_node(func_name: String, func_args: Vec<Option<Box<Node>>>) -> Option<Box<Node>> {
-        Some(Box::new(Node { 
-            kind: NodeKind::FuncCall,
-            lhs: None,
-            rhs: None,
-            cond: None,
-            then: None,
-            else_then: None,
-            init: None,
-            inc: None,
-            body: Vec::new(),
-            func_name,
-            func_args,
-        }))
+    fn wrap(self) -> Option<Box<Node>> {
+        Some(Box::new(self))
     }
 }
 
@@ -219,7 +111,7 @@ impl<'a> Parser<'a> {
         }
         self.stmt_expect_symbol("}");
 
-        let node = Node::create_block_node(stmts);
+        let node = Node::Block { body: stmts, }.wrap();
         return node;
     }
 
@@ -232,7 +124,7 @@ impl<'a> Parser<'a> {
             // "return" ";"
             Token { kind: TokenKind::Return, .. } => {
                 let _ = &self.next_token();
-                let node = Node::create(NodeKind::Return, self.expr(), None);
+                let node = Node::Return { lhs: self.expr(), }.wrap();
                 self.stmt_expect_symbol(";");
                 return node;
             },
@@ -255,11 +147,11 @@ impl<'a> Parser<'a> {
                     true => {
                         let _ = &self.next_token();
                         let else_then = self.stmt();
-                        let node = Node::create_if_node(cond, then, else_then);
+                        let node = Node::If { cond, then, else_then }.wrap();
                         return node;
                     },
                     false => {
-                        let node = Node::create_if_node(cond, then, None);
+                        let node = Node::If { cond, then, else_then: None }.wrap();
                         return node;
                     }
                 }
@@ -295,7 +187,7 @@ impl<'a> Parser<'a> {
                 let _ = &self.next_token();
                 let then = self.stmt();
 
-                let node = Node::create_for_node(init, cond, inc, then);
+                let node = Node::For { init, cond, inc, then }.wrap();
                 return node;
 
             },
@@ -312,7 +204,7 @@ impl<'a> Parser<'a> {
                 // then
                 let then = self.stmt();
 
-                let node = Node::create_while_node(cond, then);
+                let node = Node::For { init: None, cond, inc: None, then }.wrap();
                 return node;
             },
             _ => {
@@ -328,7 +220,7 @@ impl<'a> Parser<'a> {
                         match cur.expect_symbol(";") {
                             Ok(_) => {
                                 let _ = &self.next_token();
-                                let node = Node::create_block_node(Vec::new());
+                                let node = Node::Block { body: Vec::new() }.wrap();
                                 return node;
                             },
                             Err(_) => {
@@ -366,7 +258,7 @@ impl<'a> Parser<'a> {
 
         if let Ok(_) = self.cur_token().expect_symbol("=") {
             let _ = &self.next_token();
-            node = Node::create(NodeKind::Assign, node, self.assign());
+            node = Node::Assign { lhs: node, rhs: self.assign(), }.wrap();
             return node
         }
 
@@ -380,13 +272,13 @@ impl<'a> Parser<'a> {
 
             if let Ok(_) = self.cur_token().expect_symbol("==") {
                 let _ = &self.next_token();
-                node = Node::create(NodeKind::Eq, node, self.relational());
+                node = Node::Eq { lhs: node, rhs: self.relational(), }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol("!=") {
                 let _ = &self.next_token();
-                node = Node::create(NodeKind::Ne, node, self.relational());
+                node = Node::Ne { lhs: node, rhs: self.relational(), }.wrap();
                 continue;
             }
 
@@ -401,25 +293,25 @@ impl<'a> Parser<'a> {
 
             if let Ok(_) = self.cur_token().expect_symbol("<") {
                 let _ = &self.next_token();
-                node = Node::create(NodeKind::Lt, node, self.add());
+                node = Node::Lt { lhs: node, rhs: self.add(), }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol("<=") {
                 let _ = &self.next_token();
-                node = Node::create(NodeKind::Le, node, self.add());
+                node = Node::Le { lhs: node, rhs: self.add(), }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol(">") {
                 let _ = &self.next_token();
-                node = Node::create(NodeKind::Lt, self.add(), node);
+                node = Node::Lt { lhs: self.add(), rhs: node, }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol(">=") {
                 let _ = &self.next_token();
-                node = Node::create(NodeKind::Le, self.add(), node);
+                node = Node::Le { lhs: self.add(), rhs: node, }.wrap();
                 continue;
             }
 
@@ -434,13 +326,13 @@ impl<'a> Parser<'a> {
 
             if let Ok(_) = self.cur_token().expect_symbol("+") {
                 let _ = &self.next_token();
-                node = Node::create(NodeKind::Add, node, self.mul());
+                node = Node::Add { lhs: node, rhs: self.mul(), }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol("-") {
                 let _ = &self.next_token();
-                node = Node::create(NodeKind::Sub, node, self.mul());
+                node = Node::Sub { lhs: node, rhs: self.mul(), }.wrap();
                 continue;
             }
 
@@ -455,13 +347,13 @@ impl<'a> Parser<'a> {
 
             if let Ok(_) = self.cur_token().expect_symbol("*") {
                 let _ = &self.next_token();
-                node = Node::create(NodeKind::Mul, node, self.unary());
+                node = Node::Mul { lhs: node, rhs: self.unary(), }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol("/") {
                 let _ = &self.next_token();
-                node = Node::create(NodeKind::Div, node, self.unary());
+                node = Node::Div { lhs: node, rhs: self.unary(), }.wrap();
                 continue;
             }
 
@@ -476,8 +368,8 @@ impl<'a> Parser<'a> {
         }
         if let Ok(_) = self.cur_token().expect_symbol("-") {
             let _ = &self.next_token();
-            let zero = Node::create(NodeKind::Num(0), None, None);
-            return Node::create(NodeKind::Sub, zero, self.unary());
+            let zero = Node::Num { value: 0, }.wrap();
+            return Node::Sub { lhs: zero, rhs: self.unary(), }.wrap();
         }
 
         return self.primary();
@@ -513,7 +405,7 @@ impl<'a> Parser<'a> {
                 Err(_) => {
                     // local variable
                     let offset = self.local_variable.find_offset(name);
-                    Node::create(NodeKind::Lvar(offset), None, None)
+                    Node::Lvar{ offset }.wrap()
                 }
             };
 
@@ -523,7 +415,7 @@ impl<'a> Parser<'a> {
 
         match self.cur_token().expect_number() {
             Ok(n) => {
-                let node = Node::create(NodeKind::Num(n), None, None);
+                let node = Node::Num { value: n }.wrap();
                 let _ = &self.next_token();
                 return node;
             },
@@ -537,16 +429,13 @@ impl<'a> Parser<'a> {
 
 
     fn func_call(&mut self, name: String) -> Option<Box<Node>> {
-        //println!("func call {}", &name);
 
         let _ = &self.next_token();
 
         let mut args: Vec<Option<Box<Node>>> = Vec::new();
 
         while let Err(_) = self.cur_token().expect_symbol(")") {
-            //println!("== 1: func args {:?}", &self.cur_token());
             args.push(self.assign());
-            //println!("== 2: func args {:?}", &self.cur_token());
 
             if let Ok(_) = self.cur_token().expect_symbol(",") {
                 let _ = &self.next_token();
@@ -555,7 +444,7 @@ impl<'a> Parser<'a> {
 
         let _ = &self.next_token(); // skip ")"
 
-        Node::create_func_call_node(name, args)
+        Node::FuncCall { name, args, }.wrap()
     }
 }
 

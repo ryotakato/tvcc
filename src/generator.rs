@@ -1,4 +1,4 @@
-use crate::parser::{Node, NodeKind};
+use crate::parser::{ Node };
 use crate::cc_util;
 
 pub struct Generator {
@@ -12,6 +12,27 @@ impl Generator {
         Generator {
             count: 0
         }
+    }
+
+    pub fn generate_codes(&mut self, nodes: Vec<Option<Box<Node>>>) {
+
+        // output assembly
+        println!(".intel_syntax noprefix");
+        println!(".globl main");
+        println!("main:");
+        println!();
+
+        println!("  push rbp");
+        println!("  mov rbp, rsp");
+        println!("  sub rsp, 208");
+        println!();
+
+        // generate 
+        self.generate_nodes(nodes);
+
+        println!("  mov rsp, rbp");
+        println!("  pop rbp");
+        println!("  ret");
     }
 
     pub fn generate_nodes(&mut self, nodes: Vec<Option<Box<Node>>>) {
@@ -30,36 +51,36 @@ impl Generator {
             None => return,
         };
 
-        match node.kind {
-            NodeKind::If => {
+        match *node {
+            Node::If { cond, then, else_then } => {
                 self.count = self.count + 1;
-                self.generate(node.cond);
+                self.generate(cond);
                 println!("  pop rax");
                 println!("  cmp rax, 0");
                 println!("  je .L.else.{}", self.count);
-                self.generate(node.then);
+                self.generate(then);
                 println!("  jmp .L.end.{}", self.count);
                 println!(".L.else.{}:", self.count);
-                if let Some(_) = node.else_then {
-                    self.generate(node.else_then);
+                if let Some(_) = else_then {
+                    self.generate(else_then);
                 }
                 println!(".L.end.{}:", self.count);
                 println!();
                 return;
             },
-            NodeKind::For => {
+            Node::For { init, cond, inc, then } => {
                 self.count = self.count + 1;
-                self.generate(node.init);
+                self.generate(init);
                 println!(".L.begin.{}:", self.count);
-                if let Some(_) = node.cond {
-                    self.generate(node.cond);
+                if let Some(_) = cond {
+                    self.generate(cond);
                     println!("  pop rax");
                     println!("  cmp rax, 0");
                     println!("  je .L.end.{}", self.count);
                 }
-                self.generate(node.then);
-                if let Some(_) = node.inc {
-                    self.generate(node.inc);
+                self.generate(then);
+                if let Some(_) = inc {
+                    self.generate(inc);
                 }
                 println!("  jmp .L.begin.{}", self.count);
                 println!(".L.end.{}:", self.count);
@@ -67,14 +88,14 @@ impl Generator {
                 return;
 
             },
-            NodeKind::Block => {
-                for b in node.body {
+            Node::Block { body } => {
+                for b in body {
                     self.generate(b);
                 }
                 return;
             },
-            NodeKind::Return => {
-                self.generate(node.lhs);
+            Node::Return { lhs } => {
+                self.generate(lhs);
                 println!("  pop rax");
                 println!("  mov rsp, rbp");
                 println!("  pop rbp");
@@ -82,12 +103,12 @@ impl Generator {
                 println!();
                 return;
             },
-            NodeKind::Num(n) => {
-                println!("  push {}", n);
+            Node::Num { value } => {
+                println!("  push {}", value);
                 println!();
                 return;
             },
-            NodeKind::Lvar(_) => {
+            Node::Lvar { .. } => {
                 self.gen_lval(node);
                 println!("  pop rax");
                 println!("  mov rax, [rax]");
@@ -95,9 +116,9 @@ impl Generator {
                 println!();
                 return;
             },
-            NodeKind::Assign => {
-                self.generate_lval(node.lhs);
-                self.generate(node.rhs);
+            Node::Assign { lhs, rhs } => {
+                self.generate_lval(lhs);
+                self.generate(rhs);
                 println!("  pop rdi");
                 println!("  pop rax");
                 println!("  mov [rax], rdi");
@@ -105,12 +126,12 @@ impl Generator {
                 println!();
                 return;
             },
-            NodeKind::FuncCall => {
+            Node::FuncCall { name, args } => {
 
                 let args_registers = vec!["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
                 let mut argc = 0;
 
-                for arg in node.func_args {
+                for arg in args {
                     self.generate(arg);
                     argc = argc + 1;
                     if argc == args_registers.len() {
@@ -123,7 +144,7 @@ impl Generator {
                 }
 
                 println!("  mov rax, 0");
-                println!("  call {}", &node.func_name);
+                println!("  call {}", &name);
                 println!("  push rax");
                 println!();
                 return;
@@ -134,37 +155,44 @@ impl Generator {
 
 
 
-
-        self.generate(node.lhs);
-        self.generate(node.rhs);
-
-        println!("  pop rdi");
-        println!("  pop rax");
-
-        match node.kind {
-            NodeKind::Add => println!("  add rax, rdi"),
-            NodeKind::Sub => println!("  sub rax, rdi"),
-            NodeKind::Mul => println!("  imul rax, rdi"),
-            NodeKind::Div => { 
+        match *node {
+            Node::Add { lhs, rhs } => { 
+                self.gen_binary(lhs, rhs);
+                println!("  add rax, rdi")
+            },
+            Node::Sub { lhs, rhs } => {
+                self.gen_binary(lhs, rhs);
+                println!("  sub rax, rdi")
+            },
+            Node::Mul { lhs, rhs } => {
+                self.gen_binary(lhs, rhs);
+                println!("  imul rax, rdi")
+            },
+            Node::Div { lhs, rhs } => { 
+                self.gen_binary(lhs, rhs);
                 println!("  cqo");
                 println!("  idiv rdi");
             },
-            NodeKind::Eq => {
+            Node::Eq { lhs, rhs } => {
+                self.gen_binary(lhs, rhs);
                 println!("  cmp rax, rdi");
                 println!("  sete al");
                 println!("  movzb rax, al");
             },
-            NodeKind::Ne => {
+            Node::Ne { lhs, rhs } => {
+                self.gen_binary(lhs, rhs);
                 println!("  cmp rax, rdi");
                 println!("  setne al");
                 println!("  movzb rax, al");
             },
-            NodeKind::Lt => {
+            Node::Lt { lhs, rhs } => {
+                self.gen_binary(lhs, rhs);
                 println!("  cmp rax, rdi");
                 println!("  setl al");
                 println!("  movzb rax, al");
             },
-            NodeKind::Le => {
+            Node::Le { lhs, rhs } => {
+                self.gen_binary(lhs, rhs);
                 println!("  cmp rax, rdi");
                 println!("  setle al");
                 println!("  movzb rax, al");
@@ -176,6 +204,14 @@ impl Generator {
         println!();
     }
 
+    fn gen_binary(&mut self, lhs: Option<Box<Node>>, rhs: Option<Box<Node>>) {
+
+        self.generate(lhs);
+        self.generate(rhs);
+
+        println!("  pop rdi");
+        println!("  pop rax");
+    }
 
 
 
@@ -189,8 +225,8 @@ impl Generator {
     }
 
     fn gen_lval(&self, node: Box<Node>) {
-        match node.kind {
-            NodeKind::Lvar(offset) => {
+        match *node {
+            Node::Lvar { offset } => {
                 println!("  mov rax, rbp");
                 println!("  sub rax, {}", offset);
                 println!("  push rax");
