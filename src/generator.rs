@@ -2,15 +2,19 @@ use crate::parser::{ Node };
 use crate::cc_util;
 
 pub struct Generator {
-    count: usize
+    count: usize,
+    cur_func_name: String,
 }
 
 
 impl Generator {
 
+    const ARGS_REGISTERS: [&str; 6] = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
+
     pub fn new() -> Generator {
         Generator {
-            count: 0
+            count: 0,
+            cur_func_name: String::from(""),
         }
     }
 
@@ -18,24 +22,108 @@ impl Generator {
 
         // output assembly
         println!(".intel_syntax noprefix");
-        println!(".globl main");
-        println!("main:");
-        println!();
 
-        println!("  push rbp");
-        println!("  mov rbp, rsp");
-        println!("  sub rsp, 208");
-        println!();
+        //// output assembly
+        //println!(".intel_syntax noprefix");
+        //println!(".globl main");
+        //println!("main:");
+        //println!();
 
-        // generate 
-        self.generate_nodes(nodes);
+        //println!("  push rbp");
+        //println!("  mov rbp, rsp");
+        //println!("  sub rsp, 208");
+        //println!();
 
-        println!("  mov rsp, rbp");
-        println!("  pop rbp");
-        println!("  ret");
+        //// generate 
+        //self.generate_nodes(nodes);
+
+        //println!("  mov rsp, rbp");
+        //println!("  pop rbp");
+        //println!("  ret");
+
+
+        for nd in nodes {
+            // check function definition
+            let node = match nd {
+                Some(n) => n,
+                None => return,
+            };
+            let Node::FuncDef { name, params, block } = *node else {
+                cc_util::error("a top-level element must be function definition");
+            };
+
+            // calucuate offset and align
+            let stack_size = Self::calculate_stack_size(&params);
+
+            self.cur_func_name = name.to_string();
+
+            // output func area
+            println!(".globl {}", &name);
+            println!("{}:", &name);
+            println!();
+
+            // output prologue
+            println!("  push rbp");
+            println!("  mov rbp, rsp");
+            println!("  sub rsp, {}", stack_size);
+            println!();
+
+            // output params
+            let mut paramc = 0;
+
+            for param in &params {
+
+                let pn = match param {
+                    Some(n) => n,
+                    None => continue,
+                };
+                if let Node::Lvar { offset } = **pn {
+
+                    println!("  mov [rbp-{}], {}", offset, &Self::ARGS_REGISTERS[paramc]);
+                    println!();
+                    paramc = paramc + 1;
+                    if paramc == Self::ARGS_REGISTERS.len() { // only 6 arguments are accepted
+                        break;
+                    }
+                };
+            }
+
+            // output body
+            self.generate(block);
+            // TODO need pop rax?
+
+            // output epilogue
+            println!(".L.return.{}:", &name);
+            println!("  mov rsp, rbp");
+            println!("  pop rbp");
+            println!("  ret");
+            println!();
+
+        }
     }
 
-    pub fn generate_nodes(&mut self, nodes: Vec<Option<Box<Node>>>) {
+    fn calculate_stack_size(params: &Vec<Option<Box<Node>>>) -> i32 {
+        let mut total_offset = 0;
+
+        for param in params {
+            let node = match param {
+                Some(n) => n,
+                None => continue,
+            };
+            if let Node::Lvar { .. } = **node {
+                total_offset = total_offset + 8;
+            };
+        }
+
+        Self::align_to(total_offset, 16)
+    }
+
+    fn align_to(n: i32, align: i32) -> i32 {
+        (n + align - 1) / align * align
+    }
+
+    // TODO this will be removed
+    fn generate_nodes(&mut self, nodes: Vec<Option<Box<Node>>>) {
         for nd in nodes {
             self.generate(nd);
 
@@ -44,7 +132,7 @@ impl Generator {
         }
     }
 
-    pub fn generate(&mut self, nd: Option<Box<Node>>) {
+    fn generate(&mut self, nd: Option<Box<Node>>) {
 
         let node = match nd {
             Some(n) => n,
@@ -97,9 +185,7 @@ impl Generator {
             Node::Return { lhs } => {
                 self.generate(lhs);
                 println!("  pop rax");
-                println!("  mov rsp, rbp");
-                println!("  pop rbp");
-                println!("  ret");
+                println!("  jmp .L.return.{}", &self.cur_func_name);
                 println!();
                 return;
             },
@@ -128,19 +214,18 @@ impl Generator {
             },
             Node::FuncCall { name, args } => {
 
-                let args_registers = vec!["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
                 let mut argc = 0;
 
                 for arg in args {
                     self.generate(arg);
                     argc = argc + 1;
-                    if argc == args_registers.len() {
+                    if argc == Self::ARGS_REGISTERS.len() { // only 6 arguments are accepted
                         break;
                     }
                 }
 
                 for i in (0..argc).rev() { // reverse, because stack is FIFO
-                    println!("  pop {}", &args_registers[i]);
+                    println!("  pop {}", &Self::ARGS_REGISTERS[i]);
                 }
 
                 println!("  mov rax, 0");

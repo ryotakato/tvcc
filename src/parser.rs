@@ -22,6 +22,7 @@ pub enum Node {
     For { init: Option<Box<Node>>, cond: Option<Box<Node>>, inc: Option<Box<Node>>, then: Option<Box<Node>>}, // for or while
     Block { body: Vec<Option<Box<Node>>> }, // block
     FuncCall { name: String, args: Vec<Option<Box<Node>>> }, // func call
+    FuncDef { name: String, params: Vec<Option<Box<Node>>>, block: Option<Box<Node>> }, // func define
 }
 
 impl Node {
@@ -55,7 +56,8 @@ impl LocalVariable {
 pub struct Parser<'a> {
     token_iter: TokenListIterator<'a>,
     origin_formula: &'a str,
-    local_variable: LocalVariable,
+    cur_func: String,
+    local_variables: HashMap<String, LocalVariable>,
 }
 
 impl<'a> Parser<'a> {
@@ -63,26 +65,23 @@ impl<'a> Parser<'a> {
 
         let token_iter: TokenListIterator<'a> = token_list.iter();
         let origin_formula = &token_list.origin_formula;
-        let local_variable = LocalVariable::new();
+        let local_variables = HashMap::new();
 
         Parser {
             token_iter,
             origin_formula,
-            local_variable,
+            cur_func: Default::default(),
+            local_variables,
         }
     }
 
-    pub fn parse(&mut self) -> Vec<Option<Box<Node>>> {
-        self.stmt_expect_symbol("{");
+    pub fn set_cur_func(&mut self, name: String) {
+        self.cur_func = name.clone();
+        self.local_variables.insert(name.to_string(), LocalVariable::new());
+    }
 
-        let mut program: Vec<Option<Box<Node>>> = Vec::new();
-        program.push(self.compound_stmt());
-
-        if !self.cur_token().at_eof() {
-            cc_util::errors(&[&self.origin_formula, "The last } is unexpected"]);
-        }
-
-        program
+    pub fn cur_func_local_variable_offset(&mut self, variale_name: String) -> i32 {
+        self.local_variables.get_mut(&self.cur_func).unwrap().find_offset(variale_name)
     }
 
     fn cur_token(&self) -> &Token {
@@ -93,15 +92,75 @@ impl<'a> Parser<'a> {
         &self.token_iter.next().unwrap()
     }
 
-    //fn program(&mut self) -> Vec<Option<Box<Node>>> {
-    //    let mut stmts: Vec<Option<Box<Node>>> = Vec::new();
+    pub fn parse(&mut self) -> Vec<Option<Box<Node>>> {
+        //self.stmt_expect_symbol("{");
 
-    //    while !self.cur_token().at_eof() {
-    //        stmts.push(self.stmt());
-    //    }
+        //let mut program: Vec<Option<Box<Node>>> = Vec::new();
+        //program.push(self.compound_stmt());
 
-    //    stmts
-    //}
+        //if !self.cur_token().at_eof() {
+        //    cc_util::errors(&[&self.origin_formula, "The last } is unexpected"]);
+        //}
+
+        //program
+
+        let mut functions: Vec<Option<Box<Node>>> = Vec::new();
+
+        while !self.cur_token().at_eof() {
+            functions.push(self.function());
+        }
+
+        functions
+    }
+
+    fn function(&mut self) -> Option<Box<Node>> {
+        // func name
+        let name = match self.cur_token().expect_ident() {
+            Ok(name) => name.to_string(),
+            Err(e) => {
+                cc_util::errors(&[&self.origin_formula, &e]);
+            }
+        };
+
+        self.set_cur_func(name.clone());
+
+        let _ = &self.next_token();
+
+        // argument
+        self.stmt_expect_symbol("(");
+
+        let mut params: Vec<Option<Box<Node>>> = Vec::new();
+
+        while let Err(_) = self.cur_token().expect_symbol(")") {
+
+            match self.cur_token().expect_ident() {
+                Ok(param_name) => {
+                    let param_name = param_name.to_string();
+                    let _ = &self.next_token();
+
+                    // param
+                    let offset = self.cur_func_local_variable_offset(param_name);
+                    params.push(Node::Lvar{ offset }.wrap());
+                },
+                Err(e) => {
+                    cc_util::errors(&[&self.origin_formula, &e]);
+                }
+            }
+
+            if let Ok(_) = self.cur_token().expect_symbol(",") {
+                let _ = &self.next_token();
+            }
+        }
+
+        let _ = &self.next_token(); // skip ")"
+
+        // block
+        self.stmt_expect_symbol("{");
+        let block = self.compound_stmt();
+
+        let node = Node::FuncDef { name, params, block }.wrap();
+        return node;
+    }
 
     fn compound_stmt(&mut self) -> Option<Box<Node>> {
 
@@ -404,7 +463,7 @@ impl<'a> Parser<'a> {
                 },
                 Err(_) => {
                     // local variable
-                    let offset = self.local_variable.find_offset(name);
+                    let offset = self.cur_func_local_variable_offset(name);
                     Node::Lvar{ offset }.wrap()
                 }
             };
