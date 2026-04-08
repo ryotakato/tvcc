@@ -8,7 +8,7 @@ use std::collections::HashMap;
 pub enum Node {
     Add { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // +
     Sub { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // -
-    Mul { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // *
+    Mul { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // * (multiply)
     Div { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // /
     Eq { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> },  // ==
     Ne { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> },  // !=
@@ -23,6 +23,8 @@ pub enum Node {
     Block { body: Vec<Option<Box<Node>>> }, // block
     FuncCall { name: String, args: Vec<Option<Box<Node>>> }, // func call
     FuncDef { name: String, params: Vec<Option<Box<Node>>>, block: Option<Box<Node>> }, // func define
+    Addr { lhs: Option<Box<Node>> }, // & (pointer)
+    Deref { lhs: Option<Box<Node>> }, // * (pointer)
 }
 
 impl Node {
@@ -429,6 +431,14 @@ impl<'a> Parser<'a> {
             let _ = &self.next_token();
             let zero = Node::Num { value: 0, }.wrap();
             return Node::Sub { lhs: zero, rhs: self.unary(), }.wrap();
+        }
+        if let Ok(_) = self.cur_token().expect_symbol("&") {
+            let _ = &self.next_token();
+            return Node::Addr { lhs: self.unary(), }.wrap();
+        }
+        if let Ok(_) = self.cur_token().expect_symbol("*") {
+            let _ = &self.next_token();
+            return Node::Deref { lhs: self.unary(), }.wrap();
         }
 
         return self.primary();

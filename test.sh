@@ -115,4 +115,13 @@ try 17 'main() { return 17; }'
 try 17 'main() { return aaa(9) + aaa(8); } aaa(x) { return x; }'
 try 10 'main() { return aaa(10); } aaa(x) { return bbb(x); } bbb(x) { return x;}'
 
+try 3 'main() { x=3; return *&x; }'
+try 3 'main() { x=3; y=&x; z=&y; return **z; }'
+try 5 'main() { x=3; y=5; return *(&x-8); }'
+try 3 'main() { x=3; y=5; return *(&y+8); }'
+try 5 'main() { x=3; y=&x; *y=5; return x; }'
+
+try 7 'main() { x=3; y=5; *(&x-8)=7; return y; }'
+try 7 'main() { x=3; y=5; *(&y+8)=7; return x; }'
+
 echo OK

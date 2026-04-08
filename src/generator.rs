@@ -20,6 +20,13 @@ impl Generator {
 
     pub fn generate_codes(&mut self, nodes: Vec<Option<Box<Node>>>) {
 
+
+        // check node
+        //println!("{:?}", nodes);
+        //println!("-------------------------");
+
+
+
         // output assembly
         println!(".intel_syntax noprefix");
 
@@ -234,6 +241,20 @@ impl Generator {
                 println!();
                 return;
             },
+            Node::Addr { lhs } => {
+                // when it is returned from generate_lval, gen_lval, pointer address value stores in rax
+                self.generate_lval(lhs);
+                println!();
+                return;
+            },
+            Node::Deref { lhs } => {
+                self.generate(lhs);
+                println!("  pop rax");
+                println!("  mov rax, [rax]");
+                println!("  push rax");
+                println!();
+                return;
+            },
             _ => {}
         }
 
@@ -300,7 +321,7 @@ impl Generator {
 
 
 
-    fn generate_lval(&self, nd: Option<Box<Node>>) {
+    fn generate_lval(&mut self, nd: Option<Box<Node>>) {
         let node = match nd {
             Some(n) => n,
             None => return,
@@ -309,13 +330,18 @@ impl Generator {
         self.gen_lval(node);
     }
 
-    fn gen_lval(&self, node: Box<Node>) {
+    fn gen_lval(&mut self, node: Box<Node>) {
         match *node {
             Node::Lvar { offset } => {
+                // calcurate local variable address position. so, when this finishes, the top of stack is address value
                 println!("  mov rax, rbp");
                 println!("  sub rax, {}", offset);
                 println!("  push rax");
                 println!();
+            },
+            Node::Deref { lhs } => {
+                // if it is Deref, it is ok to only get the address of lhs using generate, because in Assign, the local variable indicates the address position 
+                self.generate(lhs);
             },
             _ => {
                 cc_util::error("the left value of assign is not a variable.");
