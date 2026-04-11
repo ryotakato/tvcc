@@ -64,6 +64,40 @@ $ disass
 $ exit
 ```
 
+
+
+## EBNF
+
+Extended BNF for TVCC (Recursive Descent Parsing)
+
+```
+program    = func_def*
+func_def   = type ident "(" func_args ")" "{" stmt* "}"
+func_args  = (type ident ("," type ident )*)?
+stmt       = "{" stmt* "}"
+             | "return" expr ";"
+             | "if" "(" expr ")" stmt ("else" stmt)?
+             | "while" "(" expr ")" stmt
+             | "for" "(" expr? ";" expr? ";" expr? ")" stmt
+             | "{" stmt* "}"
+             | declare ";"
+             | expr ";"
+declare    = type ident
+expr       = assign
+assign     = equality ("=" assign)?
+equality   = relational ("==" relational | "!=" relational)*
+relational = add ("<" add | "<=" add | ">" add | ">=" add)*
+add        = mul ("+" mul | "-" mul)*
+mul        = unary ("*" unary | "/" unary)*
+unary      = ("+" | "-" | "&" | "*")? primary
+primary    = "(" expr ")"
+             | ident ("(" fcall_args ")")?
+             | num 
+type       = "int"
+fcall_args = (ident ("," ident)*)?
+```
+
+
 ## Progress
 
 - [x] ステップ1: 整数1個をコンパイルする言語の作成
@@ -82,7 +116,7 @@ $ exit
 - [x] ステップ14: 関数の呼び出しに対応する
 - [x] ステップ15: 関数の定義に対応する
 - [x] ステップ16: 単項`&`と単項`*`
-- [ ] ステップ17: intキーワードを導入
+- [x] ステップ17: intキーワードを導入
 - [ ] ステップ18: ポインタ型を導入
 - [ ] ステップ19: ポインタの加算と減算を実装
 - [ ] ステップ20: sizeof演算子

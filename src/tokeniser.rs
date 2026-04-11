@@ -5,6 +5,7 @@ use crate::cc_util;
 pub enum TokenKind {
     Reserved(String), // symbol
     Ident(String),    // identifier
+    Type(String),     // type
     Num(String),      // number
     Return,           // return
     If,               // if
@@ -88,6 +89,15 @@ impl Token {
         match &self.kind {
             TokenKind::Num(_) => Ok(self.kind.num_val().unwrap()),
             _ => Err(format!("{:>padding$} expected a number", '^', padding = self.loc+1))
+        }
+    }
+
+    // if TokenKind is Type, Ok
+    // otherwise, error string
+    pub fn expect_type(&self) -> Result<&str, String> {
+        match &self.kind {
+            TokenKind::Type(val) => Ok(val),
+            _ => Err(format!("{:>padding$} expected a type", '^', padding = self.loc+1))
         }
     }
 
@@ -199,6 +209,7 @@ impl Tokeniser {
                             "else" => token_list.push_back(Token::new(TokenKind::Else, start_loc)),
                             "while" => token_list.push_back(Token::new(TokenKind::While, start_loc)),
                             "for" => token_list.push_back(Token::new(TokenKind::For, start_loc)),
+                            "int" => token_list.push_back(Token::new(TokenKind::Type(name.to_string()), start_loc)),
                             _ => token_list.push_back(Token::new(TokenKind::Ident(name.to_string()), start_loc)),
                         }
                         start_identifier_flag = false;

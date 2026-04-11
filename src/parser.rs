@@ -3,6 +3,7 @@ use crate::tokeniser::{Token, TokenListIterator, TokenList, TokenKind};
 use crate::cc_util;
 
 use std::collections::HashMap;
+use std::str::FromStr;
 
 #[derive(Debug)]
 pub enum Node {
@@ -22,7 +23,7 @@ pub enum Node {
     For { init: Option<Box<Node>>, cond: Option<Box<Node>>, inc: Option<Box<Node>>, then: Option<Box<Node>>}, // for or while
     Block { body: Vec<Option<Box<Node>>> }, // block
     FuncCall { name: String, args: Vec<Option<Box<Node>>> }, // func call
-    FuncDef { name: String, params: Vec<Option<Box<Node>>>, block: Option<Box<Node>> }, // func define
+    FuncDef { name: String, r_type: String, params: Vec<Option<Box<Node>>>, block: Option<Box<Node>> }, // func define
     Addr { lhs: Option<Box<Node>> }, // & (pointer)
     Deref { lhs: Option<Box<Node>> }, // * (pointer)
 }
@@ -33,11 +34,28 @@ impl Node {
     }
 }
 
+#[derive(Debug)]
+pub enum Type {
+    Int,
+}
+
+impl FromStr for Type {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "int" => Ok(Type::Int),
+            _ => Err(()),
+        }
+    }
+
+}
+
 
 // struct for local variales 
 struct LocalVariable {
     latest_offset: i32,
-    variables: HashMap<String, i32>,
+    variables: HashMap<String, (i32, Type)>,
 }
 
 impl LocalVariable {
@@ -48,8 +66,22 @@ impl LocalVariable {
         }
     }
 
-    fn find_offset(&mut self, variale_name: String) -> i32 {
-        self.variables.entry(variale_name).or_insert_with(|| {self.latest_offset = self.latest_offset + 8; self.latest_offset}).clone()
+    fn add_variable(&mut self, variale_name: String, v_type: Type) -> bool {
+        match self.variables.entry(variale_name) {
+            std::collections::hash_map::Entry::Occupied(_entry) => false,
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                self.latest_offset = self.latest_offset + 8;
+                entry.insert((self.latest_offset, v_type));
+                true
+            }
+        }
+    }
+
+    fn find_offset(&mut self, variale_name: &str) -> Option<i32> {
+        match self.variables.get(variale_name) {
+            Some((offset, _)) => Some(*offset),
+            _ => None
+        }
     }
 }
 
@@ -82,8 +114,28 @@ impl<'a> Parser<'a> {
         self.local_variables.insert(name.to_string(), LocalVariable::new());
     }
 
-    pub fn cur_func_local_variable_offset(&mut self, variale_name: String) -> i32 {
-        self.local_variables.get_mut(&self.cur_func).unwrap().find_offset(variale_name)
+    pub fn cur_func_add_local_variable(&mut self, variale_name: &str, v_type_name: &str) -> Result<(), String> {
+
+        match v_type_name.parse::<Type>() {
+            Ok(v_type) => {
+                if self.local_variables.get_mut(&self.cur_func).unwrap().add_variable(variale_name.to_string(), v_type) {
+                    Ok(())
+                } else {
+                    Err(format!("variable: {} is already defined in {}", variale_name, &self.cur_func))
+                }
+            },
+            Err(_) => {
+                Err(format!("type: {} is not defined in {}", v_type_name, &self.cur_func))
+            }
+        }
+
+    }
+
+    pub fn cur_func_local_variable_offset(&mut self, variale_name: &str) -> Result<i32, String> {
+        match self.local_variables.get_mut(&self.cur_func).unwrap().find_offset(variale_name) {
+            Some(offset) => Ok(offset),
+            None => Err(format!("variable: {} is not defined in {}", variale_name, &self.cur_func))
+        }
     }
 
     fn cur_token(&self) -> &Token {
@@ -116,6 +168,16 @@ impl<'a> Parser<'a> {
     }
 
     fn function(&mut self) -> Option<Box<Node>> {
+        // return type
+        let r_type = match self.cur_token().expect_type() {
+            Ok(r_type) => r_type.to_string(),
+            Err(e) => {
+                cc_util::errors(&[&self.origin_formula, &e]);
+            }
+        };
+
+        let _ = &self.next_token();
+
         // func name
         let name = match self.cur_token().expect_ident() {
             Ok(name) => name.to_string(),
@@ -135,13 +197,28 @@ impl<'a> Parser<'a> {
 
         while let Err(_) = self.cur_token().expect_symbol(")") {
 
-            match self.cur_token().expect_ident() {
-                Ok(param_name) => {
-                    let param_name = param_name.to_string();
-                    let _ = &self.next_token();
+            let v_type = match self.cur_token().expect_type() {
+                Ok(v_type) => v_type.to_string(),
+                Err(e) => {
+                    cc_util::errors(&[&self.origin_formula, &e]);
+                }
+            };
 
-                    // param
-                    let offset = self.cur_func_local_variable_offset(param_name);
+            let _ = &self.next_token();
+
+            let v_name = match self.cur_token().expect_ident() {
+                Ok(param_name) => param_name.to_string(),
+                Err(e) => {
+                    cc_util::errors(&[&self.origin_formula, &e]);
+                }
+            };
+
+            let _ = &self.next_token();
+
+            // define local variable
+            match self.cur_func_add_local_variable(&v_name, &v_type) {
+                Ok(()) => {
+                    let offset = self.cur_func_local_variable_offset(&v_name).unwrap(); // definitely success because it is just after add variable
                     params.push(Node::Lvar{ offset }.wrap());
                 },
                 Err(e) => {
@@ -160,7 +237,7 @@ impl<'a> Parser<'a> {
         self.stmt_expect_symbol("{");
         let block = self.compound_stmt();
 
-        let node = Node::FuncDef { name, params, block }.wrap();
+        let node = Node::FuncDef { name, r_type, params, block }.wrap();
         return node;
     }
 
@@ -268,6 +345,12 @@ impl<'a> Parser<'a> {
                 let node = Node::For { init: None, cond, inc: None, then }.wrap();
                 return node;
             },
+            // type ident
+            Token { kind: TokenKind::Type(_), .. } => {
+                let node = self.declare();
+                self.stmt_expect_symbol(";");
+                return node;
+            },
             _ => {
                 match cur.expect_symbol("{") {
                     // "{" compound_stmt
@@ -308,6 +391,39 @@ impl<'a> Parser<'a> {
         };
     }
 
+    fn declare(&mut self) -> Option<Box<Node>> {
+
+        let v_type = match self.cur_token().expect_type() {
+            Ok(v_type) => v_type.to_string(),
+            Err(e) => {
+                cc_util::errors(&[&self.origin_formula, &e]);
+            }
+        };
+
+        let _ = &self.next_token();
+
+        let v_name = match self.cur_token().expect_ident() {
+            Ok(v_name) => v_name.to_string(),
+            Err(e) => {
+                cc_util::errors(&[&self.origin_formula, &e]);
+            }
+        };
+
+        let _ = &self.next_token();
+
+        // define local variable
+        let node = match self.cur_func_add_local_variable(&v_name, &v_type) {
+            Ok(()) => {
+                let offset = self.cur_func_local_variable_offset(&v_name).unwrap(); // definitely success because it is just after add variable
+                Node::Lvar { offset }.wrap()
+            },
+            Err(e) => {
+                cc_util::errors(&[&self.origin_formula, &e]);
+            }
+        };
+
+        return node;
+    }
 
 
     fn expr(&mut self) -> Option<Box<Node>> {
@@ -320,10 +436,10 @@ impl<'a> Parser<'a> {
         if let Ok(_) = self.cur_token().expect_symbol("=") {
             let _ = &self.next_token();
             node = Node::Assign { lhs: node, rhs: self.assign(), }.wrap();
-            return node
+            return node;
         }
 
-        return node
+        return node;
     }
 
     fn equality(&mut self) -> Option<Box<Node>> {
@@ -473,8 +589,13 @@ impl<'a> Parser<'a> {
                 },
                 Err(_) => {
                     // local variable
-                    let offset = self.cur_func_local_variable_offset(name);
-                    Node::Lvar{ offset }.wrap()
+                    match self.cur_func_local_variable_offset(&name) {
+                        Ok(offset) => Node::Lvar{ offset }.wrap(),
+                        Err(e) => {
+                            cc_util::errors(&[&self.origin_formula, &e]);
+                            //return None;
+                        }
+                    }
                 }
             };
 

@@ -55,7 +55,7 @@ impl Generator {
                 Some(n) => n,
                 None => return,
             };
-            let Node::FuncDef { name, params, block } = *node else {
+            let Node::FuncDef { name, r_type, params, block } = *node else {
                 cc_util::error("a top-level element must be function definition");
             };
 
