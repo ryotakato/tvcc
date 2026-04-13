@@ -23,7 +23,7 @@ pub enum Node {
     For { init: Option<Box<Node>>, cond: Option<Box<Node>>, inc: Option<Box<Node>>, then: Option<Box<Node>>}, // for or while
     Block { body: Vec<Option<Box<Node>>> }, // block
     FuncCall { name: String, args: Vec<Option<Box<Node>>> }, // func call
-    FuncDef { name: String, r_type: String, params: Vec<Option<Box<Node>>>, block: Option<Box<Node>> }, // func define
+    FuncDef { name: String, r_type: String, params: Vec<Option<Box<Node>>>, stack_size: i32, block: Option<Box<Node>> }, // func define
     Addr { lhs: Option<Box<Node>> }, // & (pointer)
     Deref { lhs: Option<Box<Node>> }, // * (pointer)
 }
@@ -109,12 +109,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn set_cur_func(&mut self, name: String) {
+    fn set_cur_func(&mut self, name: String) {
         self.cur_func = name.clone();
         self.local_variables.insert(name.to_string(), LocalVariable::new());
     }
 
-    pub fn cur_func_add_local_variable(&mut self, variale_name: &str, v_type_name: &str) -> Result<(), String> {
+    fn cur_func_add_local_variable(&mut self, variale_name: &str, v_type_name: &str) -> Result<(), String> {
 
         match v_type_name.parse::<VarType>() {
             Ok(v_type) => self.cur_func_add_local_variable_by_type(variale_name, v_type),
@@ -125,7 +125,7 @@ impl<'a> Parser<'a> {
 
     }
 
-    pub fn cur_func_add_local_variable_by_type(&mut self, variale_name: &str, v_type: VarType) -> Result<(), String> {
+    fn cur_func_add_local_variable_by_type(&mut self, variale_name: &str, v_type: VarType) -> Result<(), String> {
 
         if self.local_variables.get_mut(&self.cur_func).unwrap().add_variable(variale_name.to_string(), v_type) {
             Ok(())
@@ -134,12 +134,25 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn cur_func_local_variable_offset(&mut self, variale_name: &str) -> Result<i32, String> {
+    fn cur_func_local_variable_offset(&mut self, variale_name: &str) -> Result<i32, String> {
         match self.local_variables.get_mut(&self.cur_func).unwrap().find_offset(variale_name) {
             Some(offset) => Ok(offset),
             None => Err(format!("variable: {} is not defined in {}", variale_name, &self.cur_func))
         }
     }
+
+
+    fn cur_func_calculate_stack_size(&mut self) -> i32 {
+        // calucuate offset and align
+        let total_offset = self.local_variables.get_mut(&self.cur_func).unwrap().latest_offset;
+        Self::align_to(total_offset, 16)
+    }
+
+    fn align_to(n: i32, align: i32) -> i32 {
+        (n + align - 1) / align * align
+    }
+
+
 
     fn cur_token(&self) -> &Token {
         &self.token_iter.current().unwrap()
@@ -150,14 +163,6 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse(&mut self) -> Vec<Option<Box<Node>>> {
-        //self.stmt_expect_symbol("{");
-
-        //let mut program: Vec<Option<Box<Node>>> = Vec::new();
-        //program.push(self.compound_stmt());
-
-        //if !self.cur_token().at_eof() {
-        //    cc_util::errors(&[&self.origin_formula, "The last } is unexpected"]);
-        //}
 
         //program
 
@@ -240,7 +245,9 @@ impl<'a> Parser<'a> {
         self.stmt_expect_symbol("{");
         let block = self.compound_stmt();
 
-        let node = Node::FuncDef { name, r_type, params, block }.wrap();
+        let stack_size = self.cur_func_calculate_stack_size();
+
+        let node = Node::FuncDef { name, r_type, params, stack_size, block }.wrap();
         return node;
     }
 

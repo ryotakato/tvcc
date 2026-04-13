@@ -30,37 +30,15 @@ impl Generator {
         // output assembly
         println!(".intel_syntax noprefix");
 
-        //// output assembly
-        //println!(".intel_syntax noprefix");
-        //println!(".globl main");
-        //println!("main:");
-        //println!();
-
-        //println!("  push rbp");
-        //println!("  mov rbp, rsp");
-        //println!("  sub rsp, 208");
-        //println!();
-
-        //// generate 
-        //self.generate_nodes(nodes);
-
-        //println!("  mov rsp, rbp");
-        //println!("  pop rbp");
-        //println!("  ret");
-
-
         for nd in nodes {
             // check function definition
             let node = match nd {
                 Some(n) => n,
                 None => return,
             };
-            let Node::FuncDef { name, r_type, params, block } = *node else {
+            let Node::FuncDef { name, r_type, params, stack_size, block } = *node else {
                 cc_util::error("a top-level element must be function definition");
             };
-
-            // calucuate offset and align
-            let stack_size = Self::calculate_stack_size(&params);
 
             self.cur_func_name = name.to_string();
 
@@ -106,36 +84,6 @@ impl Generator {
             println!("  ret");
             println!();
 
-        }
-    }
-
-    fn calculate_stack_size(params: &Vec<Option<Box<Node>>>) -> i32 {
-        let mut total_offset = 0;
-
-        for param in params {
-            let node = match param {
-                Some(n) => n,
-                None => continue,
-            };
-            if let Node::Lvar { .. } = **node {
-                total_offset = total_offset + 8;
-            };
-        }
-
-        Self::align_to(total_offset, 16)
-    }
-
-    fn align_to(n: i32, align: i32) -> i32 {
-        (n + align - 1) / align * align
-    }
-
-    // TODO this will be removed
-    fn generate_nodes(&mut self, nodes: Vec<Option<Box<Node>>>) {
-        for nd in nodes {
-            self.generate(nd);
-
-            println!("  pop rax");
-            println!();
         }
     }
 
@@ -215,7 +163,7 @@ impl Generator {
                 println!("  pop rdi");
                 println!("  pop rax");
                 println!("  mov [rax], rdi");
-                //println!("  push rdi");
+                println!("  push rdi");
                 println!();
                 return;
             },
