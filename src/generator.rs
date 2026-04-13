@@ -215,7 +215,7 @@ impl Generator {
                 println!("  pop rdi");
                 println!("  pop rax");
                 println!("  mov [rax], rdi");
-                println!("  push rdi");
+                //println!("  push rdi");
                 println!();
                 return;
             },

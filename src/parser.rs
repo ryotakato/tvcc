@@ -34,17 +34,17 @@ impl Node {
     }
 }
 
-#[derive(Debug)]
-pub enum Type {
+#[derive(Debug, Clone)]
+pub enum VarType {
     Int,
 }
 
-impl FromStr for Type {
+impl FromStr for VarType {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "int" => Ok(Type::Int),
+            "int" => Ok(VarType::Int),
             _ => Err(()),
         }
     }
@@ -55,7 +55,7 @@ impl FromStr for Type {
 // struct for local variales 
 struct LocalVariable {
     latest_offset: i32,
-    variables: HashMap<String, (i32, Type)>,
+    variables: HashMap<String, (i32, VarType)>,
 }
 
 impl LocalVariable {
@@ -66,7 +66,7 @@ impl LocalVariable {
         }
     }
 
-    fn add_variable(&mut self, variale_name: String, v_type: Type) -> bool {
+    fn add_variable(&mut self, variale_name: String, v_type: VarType) -> bool {
         match self.variables.entry(variale_name) {
             std::collections::hash_map::Entry::Occupied(_entry) => false,
             std::collections::hash_map::Entry::Vacant(entry) => {
@@ -116,19 +116,22 @@ impl<'a> Parser<'a> {
 
     pub fn cur_func_add_local_variable(&mut self, variale_name: &str, v_type_name: &str) -> Result<(), String> {
 
-        match v_type_name.parse::<Type>() {
-            Ok(v_type) => {
-                if self.local_variables.get_mut(&self.cur_func).unwrap().add_variable(variale_name.to_string(), v_type) {
-                    Ok(())
-                } else {
-                    Err(format!("variable: {} is already defined in {}", variale_name, &self.cur_func))
-                }
-            },
+        match v_type_name.parse::<VarType>() {
+            Ok(v_type) => self.cur_func_add_local_variable_by_type(variale_name, v_type),
             Err(_) => {
                 Err(format!("type: {} is not defined in {}", v_type_name, &self.cur_func))
             }
         }
 
+    }
+
+    pub fn cur_func_add_local_variable_by_type(&mut self, variale_name: &str, v_type: VarType) -> Result<(), String> {
+
+        if self.local_variables.get_mut(&self.cur_func).unwrap().add_variable(variale_name.to_string(), v_type) {
+            Ok(())
+        } else {
+            Err(format!("variable: {} is already defined in {}", variale_name, &self.cur_func))
+        }
     }
 
     pub fn cur_func_local_variable_offset(&mut self, variale_name: &str) -> Result<i32, String> {
@@ -241,11 +244,17 @@ impl<'a> Parser<'a> {
         return node;
     }
 
+    // compound_stmt = (declaration | stmt)* "}"
     fn compound_stmt(&mut self) -> Option<Box<Node>> {
 
         let mut stmts: Vec<Option<Box<Node>>> = Vec::new();
         while let Err(_) = self.cur_token().expect_symbol("}") {
-            stmts.push(self.stmt());
+
+            if let Token { kind: TokenKind::Type(_), .. } = self.cur_token() {
+                stmts.push(self.declaration());
+            } else {
+                stmts.push(self.stmt());
+            }
         }
         self.stmt_expect_symbol("}");
 
@@ -253,13 +262,83 @@ impl<'a> Parser<'a> {
         return node;
     }
 
+    fn declaration(&mut self) -> Option<Box<Node>> {
+        let base_type: VarType = self.declspec();
+
+        let mut assigns: Vec<Option<Box<Node>>> = Vec::new();
+        while let Err(_) = self.cur_token().expect_symbol(";") {
+
+            if let Ok(_) = self.cur_token().expect_symbol(",") {
+                let _ = &self.next_token();
+            }
+
+            let v_name = self.declarator(base_type.clone());
+
+            let Ok(_) = self.cur_token().expect_symbol("=") else {
+                continue;
+            };
+
+            let _ = &self.next_token();
+
+            let offset = self.cur_func_local_variable_offset(&v_name).unwrap(); // definitely success because it is just after add variable
+            assigns.push(Node::Assign { lhs: Node::Lvar { offset }.wrap(), rhs: self.expr(), }.wrap());
+
+
+        }
+
+        let node = Node::Block { body: assigns, }.wrap();
+        return node;
+    }
+
+    fn declspec(&mut self) -> VarType {
+        let v_type_name = match self.cur_token().expect_type() {
+            Ok(v_type_name) => v_type_name.to_string(),
+            Err(e) => {
+                cc_util::errors(&[&self.origin_formula, &e]);
+            }
+        };
+
+        let _ = &self.next_token();
+
+        match v_type_name.parse::<VarType>() {
+            Ok(v_type) => v_type,
+            Err(_) => {
+                cc_util::errors(&[&self.origin_formula, &format!("type: {} is not defined in {}", v_type_name, &self.cur_func)]);
+            }
+        }
+
+    }
+
+    fn declarator(&mut self, base_type: VarType) -> String {
+
+        let v_name = match self.cur_token().expect_ident() {
+            Ok(v_name) => v_name.to_string(),
+            Err(e) => {
+                cc_util::errors(&[&self.origin_formula, &e]);
+            }
+        };
+
+        // define local variable
+        match self.cur_func_add_local_variable_by_type(&v_name, base_type) {
+            Ok(()) => {
+                let _ = &self.next_token();
+                return v_name;
+            },
+            Err(e) => {
+                cc_util::errors(&[&self.origin_formula, &e]);
+            }
+        };
+    }
+
+
+
     fn stmt(&mut self) -> Option<Box<Node>> {
 
 
         let cur = self.cur_token();
 
         match cur {
-            // "return" ";"
+            // "return" expr ";"
             Token { kind: TokenKind::Return, .. } => {
                 let _ = &self.next_token();
                 let node = Node::Return { lhs: self.expr(), }.wrap();
@@ -345,12 +424,6 @@ impl<'a> Parser<'a> {
                 let node = Node::For { init: None, cond, inc: None, then }.wrap();
                 return node;
             },
-            // type ident
-            Token { kind: TokenKind::Type(_), .. } => {
-                let node = self.declare();
-                self.stmt_expect_symbol(";");
-                return node;
-            },
             _ => {
                 match cur.expect_symbol("{") {
                     // "{" compound_stmt
@@ -359,7 +432,7 @@ impl<'a> Parser<'a> {
                         let node = self.compound_stmt();
                         return node;
                     },
-                    // expr ";"
+                    // expr? ";"
                     Err(_) => {
                         match cur.expect_symbol(";") {
                             Ok(_) => {
@@ -389,40 +462,6 @@ impl<'a> Parser<'a> {
                 cc_util::errors(&[&self.origin_formula, &e]);
             },
         };
-    }
-
-    fn declare(&mut self) -> Option<Box<Node>> {
-
-        let v_type = match self.cur_token().expect_type() {
-            Ok(v_type) => v_type.to_string(),
-            Err(e) => {
-                cc_util::errors(&[&self.origin_formula, &e]);
-            }
-        };
-
-        let _ = &self.next_token();
-
-        let v_name = match self.cur_token().expect_ident() {
-            Ok(v_name) => v_name.to_string(),
-            Err(e) => {
-                cc_util::errors(&[&self.origin_formula, &e]);
-            }
-        };
-
-        let _ = &self.next_token();
-
-        // define local variable
-        let node = match self.cur_func_add_local_variable(&v_name, &v_type) {
-            Ok(()) => {
-                let offset = self.cur_func_local_variable_offset(&v_name).unwrap(); // definitely success because it is just after add variable
-                Node::Lvar { offset }.wrap()
-            },
-            Err(e) => {
-                cc_util::errors(&[&self.origin_formula, &e]);
-            }
-        };
-
-        return node;
     }
 
 
