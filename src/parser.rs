@@ -1,6 +1,6 @@
 use crate::tokeniser::{Token, TokenListIterator, TokenList, TokenKind};
-//use crate::cc_util::{error, errors};
-use crate::cc_util;
+
+use crate::cc_util::CompileError;
 
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -114,30 +114,30 @@ impl<'a> Parser<'a> {
         self.local_variables.insert(name.to_string(), LocalVariable::new());
     }
 
-    fn cur_func_add_local_variable(&mut self, variale_name: &str, v_type_name: &str) -> Result<(), String> {
+    fn cur_func_add_local_variable(&mut self, variale_name: &str, v_type_name: &str) -> Result<(), CompileError> {
 
         match v_type_name.parse::<VarType>() {
             Ok(v_type) => self.cur_func_add_local_variable_by_type(variale_name, v_type),
             Err(_) => {
-                Err(format!("type: {} is not defined in {}", v_type_name, &self.cur_func))
+                Err(CompileError::new(&[&format!("type: {} is not defined in {}", v_type_name, &self.cur_func)]))
             }
         }
 
     }
 
-    fn cur_func_add_local_variable_by_type(&mut self, variale_name: &str, v_type: VarType) -> Result<(), String> {
+    fn cur_func_add_local_variable_by_type(&mut self, variale_name: &str, v_type: VarType) -> Result<(), CompileError> {
 
         if self.local_variables.get_mut(&self.cur_func).unwrap().add_variable(variale_name.to_string(), v_type) {
             Ok(())
         } else {
-            Err(format!("variable: {} is already defined in {}", variale_name, &self.cur_func))
+            Err(CompileError::new(&[&format!("variable: {} is already defined in {}", variale_name, &self.cur_func)]))
         }
     }
 
-    fn cur_func_local_variable_offset(&mut self, variale_name: &str) -> Result<i32, String> {
+    fn cur_func_local_variable_offset(&mut self, variale_name: &str) -> Result<i32, CompileError> {
         match self.local_variables.get_mut(&self.cur_func).unwrap().find_offset(variale_name) {
             Some(offset) => Ok(offset),
-            None => Err(format!("variable: {} is not defined in {}", variale_name, &self.cur_func))
+            None => Err(CompileError::new(&[&format!("variable: {} is not defined in {}", variale_name, &self.cur_func)]))
         }
     }
 
@@ -162,77 +162,52 @@ impl<'a> Parser<'a> {
         &self.token_iter.next().unwrap()
     }
 
-    pub fn parse(&mut self) -> Vec<Option<Box<Node>>> {
+
+
+    pub fn parse(&mut self) -> Result<Vec<Option<Box<Node>>>, CompileError> {
 
         //program
 
         let mut functions: Vec<Option<Box<Node>>> = Vec::new();
 
         while !self.cur_token().at_eof() {
-            functions.push(self.function());
+            functions.push(self.function()?);
         }
 
-        functions
+        Ok(functions)
     }
 
-    fn function(&mut self) -> Option<Box<Node>> {
+    fn function(&mut self) -> Result<Option<Box<Node>>, CompileError> {
         // return type
-        let r_type = match self.cur_token().expect_type() {
-            Ok(r_type) => r_type.to_string(),
-            Err(e) => {
-                cc_util::errors(&[&self.origin_formula, &e]);
-            }
-        };
+        let r_type = self.cur_token().expect_type()?.to_string();
 
         let _ = &self.next_token();
 
         // func name
-        let name = match self.cur_token().expect_ident() {
-            Ok(name) => name.to_string(),
-            Err(e) => {
-                cc_util::errors(&[&self.origin_formula, &e]);
-            }
-        };
+        let name = self.cur_token().expect_ident()?.to_string();
 
         self.set_cur_func(name.clone());
 
         let _ = &self.next_token();
 
         // argument
-        self.stmt_expect_symbol("(");
+        self.stmt_expect_symbol("(")?;
 
         let mut params: Vec<Option<Box<Node>>> = Vec::new();
 
         while let Err(_) = self.cur_token().expect_symbol(")") {
 
-            let v_type = match self.cur_token().expect_type() {
-                Ok(v_type) => v_type.to_string(),
-                Err(e) => {
-                    cc_util::errors(&[&self.origin_formula, &e]);
-                }
-            };
-
+            // identify local variable
+            let v_type = self.cur_token().expect_type()?.to_string();
             let _ = &self.next_token();
 
-            let v_name = match self.cur_token().expect_ident() {
-                Ok(param_name) => param_name.to_string(),
-                Err(e) => {
-                    cc_util::errors(&[&self.origin_formula, &e]);
-                }
-            };
-
+            let v_name = self.cur_token().expect_ident()?.to_string();
             let _ = &self.next_token();
 
             // define local variable
-            match self.cur_func_add_local_variable(&v_name, &v_type) {
-                Ok(()) => {
-                    let offset = self.cur_func_local_variable_offset(&v_name).unwrap(); // definitely success because it is just after add variable
-                    params.push(Node::Lvar{ offset }.wrap());
-                },
-                Err(e) => {
-                    cc_util::errors(&[&self.origin_formula, &e]);
-                }
-            }
+            let _ = self.cur_func_add_local_variable(&v_name, &v_type)?;
+            let offset = self.cur_func_local_variable_offset(&v_name)?; // definitely success because it is just after add variable
+            params.push(Node::Lvar{ offset }.wrap());
 
             if let Ok(_) = self.cur_token().expect_symbol(",") {
                 let _ = &self.next_token();
@@ -242,35 +217,39 @@ impl<'a> Parser<'a> {
         let _ = &self.next_token(); // skip ")"
 
         // block
-        self.stmt_expect_symbol("{");
-        let block = self.compound_stmt();
+        self.stmt_expect_symbol("{")?;
+        let block = self.compound_stmt()?;
 
         let stack_size = self.cur_func_calculate_stack_size();
 
         let node = Node::FuncDef { name, r_type, params, stack_size, block }.wrap();
-        return node;
+        return Ok(node);
     }
 
+
+
     // compound_stmt = (declaration | stmt)* "}"
-    fn compound_stmt(&mut self) -> Option<Box<Node>> {
+    fn compound_stmt(&mut self) -> Result<Option<Box<Node>>, CompileError> {
 
         let mut stmts: Vec<Option<Box<Node>>> = Vec::new();
         while let Err(_) = self.cur_token().expect_symbol("}") {
 
             if let Token { kind: TokenKind::Type(_), .. } = self.cur_token() {
-                stmts.push(self.declaration());
+                stmts.push(self.declaration()?);
             } else {
-                stmts.push(self.stmt());
+                stmts.push(self.stmt()?);
             }
         }
-        self.stmt_expect_symbol("}");
+        self.stmt_expect_symbol("}")?;
 
         let node = Node::Block { body: stmts, }.wrap();
-        return node;
+        return Ok(node);
     }
 
-    fn declaration(&mut self) -> Option<Box<Node>> {
-        let base_type: VarType = self.declspec();
+
+
+    fn declaration(&mut self) -> Result<Option<Box<Node>>, CompileError> {
+        let base_type: VarType = self.declspec()?;
 
         let mut assigns: Vec<Option<Box<Node>>> = Vec::new();
         while let Err(_) = self.cur_token().expect_symbol(";") {
@@ -279,7 +258,7 @@ impl<'a> Parser<'a> {
                 let _ = &self.next_token();
             }
 
-            let v_name = self.declarator(base_type.clone());
+            let v_name = self.declarator(base_type.clone())?;
 
             let Ok(_) = self.cur_token().expect_symbol("=") else {
                 continue;
@@ -287,59 +266,44 @@ impl<'a> Parser<'a> {
 
             let _ = &self.next_token();
 
-            let offset = self.cur_func_local_variable_offset(&v_name).unwrap(); // definitely success because it is just after add variable
-            assigns.push(Node::Assign { lhs: Node::Lvar { offset }.wrap(), rhs: self.expr(), }.wrap());
+            let offset = self.cur_func_local_variable_offset(&v_name)?; // definitely success because it is just after add variable
+            assigns.push(Node::Assign { lhs: Node::Lvar { offset }.wrap(), rhs: self.expr()?, }.wrap());
 
 
         }
 
         let node = Node::Block { body: assigns, }.wrap();
-        return node;
+        return Ok(node);
     }
 
-    fn declspec(&mut self) -> VarType {
-        let v_type_name = match self.cur_token().expect_type() {
-            Ok(v_type_name) => v_type_name.to_string(),
-            Err(e) => {
-                cc_util::errors(&[&self.origin_formula, &e]);
-            }
-        };
+    fn declspec(&mut self) -> Result<VarType, CompileError> {
+        let v_type_name = self.cur_token().expect_type()?.to_string();
 
         let _ = &self.next_token();
 
         match v_type_name.parse::<VarType>() {
-            Ok(v_type) => v_type,
+            Ok(v_type) => Ok(v_type),
             Err(_) => {
-                cc_util::errors(&[&self.origin_formula, &format!("type: {} is not defined in {}", v_type_name, &self.cur_func)]);
+                Err(CompileError::new(&[&format!("type: {} is not defined in {}", v_type_name, &self.cur_func)]))
             }
         }
 
     }
 
-    fn declarator(&mut self, base_type: VarType) -> String {
+    fn declarator(&mut self, base_type: VarType) -> Result<String, CompileError> {
 
-        let v_name = match self.cur_token().expect_ident() {
-            Ok(v_name) => v_name.to_string(),
-            Err(e) => {
-                cc_util::errors(&[&self.origin_formula, &e]);
-            }
-        };
+        let v_name = self.cur_token().expect_ident()?.to_string();
 
         // define local variable
-        match self.cur_func_add_local_variable_by_type(&v_name, base_type) {
-            Ok(()) => {
-                let _ = &self.next_token();
-                return v_name;
-            },
-            Err(e) => {
-                cc_util::errors(&[&self.origin_formula, &e]);
-            }
-        };
+        let _ = self.cur_func_add_local_variable_by_type(&v_name, base_type)?;
+
+        let _ = &self.next_token();
+        return Ok(v_name);
     }
 
 
 
-    fn stmt(&mut self) -> Option<Box<Node>> {
+    fn stmt(&mut self) -> Result<Option<Box<Node>>, CompileError> {
 
 
         let cur = self.cur_token();
@@ -348,35 +312,35 @@ impl<'a> Parser<'a> {
             // "return" expr ";"
             Token { kind: TokenKind::Return, .. } => {
                 let _ = &self.next_token();
-                let node = Node::Return { lhs: self.expr(), }.wrap();
-                self.stmt_expect_symbol(";");
-                return node;
+                let node = Node::Return { lhs: self.expr()?, }.wrap();
+                self.stmt_expect_symbol(";")?;
+                return Ok(node);
             },
             // "if" "(" expr ")" stmt ("else" stmt)?
             Token { kind: TokenKind::If, .. } => {
 
 
                 let _ = &self.next_token();
-                self.stmt_expect_symbol("(");
+                self.stmt_expect_symbol("(")?;
                 // cond
-                let cond = self.expr();
+                let cond = self.expr()?;
 
-                self.stmt_expect_symbol(")");
+                self.stmt_expect_symbol(")")?;
 
                 // then
-                let then = self.stmt();
+                let then = self.stmt()?;
 
                 // else_then
                 match self.cur_token().at_else() {
                     true => {
                         let _ = &self.next_token();
-                        let else_then = self.stmt();
+                        let else_then = self.stmt()?;
                         let node = Node::If { cond, then, else_then }.wrap();
-                        return node;
+                        return Ok(node);
                     },
                     false => {
                         let node = Node::If { cond, then, else_then: None }.wrap();
-                        return node;
+                        return Ok(node);
                     }
                 }
 
@@ -385,59 +349,59 @@ impl<'a> Parser<'a> {
             Token { kind: TokenKind::For, .. } => {
 
                 let _ = &self.next_token();
-                self.stmt_expect_symbol("(");
+                self.stmt_expect_symbol("(")?;
 
                 // init
                 let init = match self.cur_token().expect_symbol(";") {
                     Ok(_n) => None,
-                    Err(_) => self.expr(),
+                    Err(_) => self.expr()?,
                 };
 
                 // cond
                 let _ = &self.next_token();
                 let cond = match self.cur_token().expect_symbol(";") {
                     Ok(_n) => None,
-                    Err(_) => self.expr(),
+                    Err(_) => self.expr()?,
                 };
 
                 // inc
                 let _ = &self.next_token();
                 let inc = match self.cur_token().expect_symbol(")") {
                     Ok(_n) => None,
-                    Err(_) => self.expr(),
+                    Err(_) => self.expr()?,
                 };
 
                 // then
                 let _ = &self.next_token();
-                let then = self.stmt();
+                let then = self.stmt()?;
 
                 let node = Node::For { init, cond, inc, then }.wrap();
-                return node;
+                return Ok(node);
 
             },
             // "while" "(" expr ")" stmt
             Token { kind: TokenKind::While, .. } => {
 
                 let _ = &self.next_token();
-                self.stmt_expect_symbol("(");
+                self.stmt_expect_symbol("(")?;
                 // cond
-                let cond = self.expr();
+                let cond = self.expr()?;
 
-                self.stmt_expect_symbol(")");
+                self.stmt_expect_symbol(")")?;
 
                 // then
-                let then = self.stmt();
+                let then = self.stmt()?;
 
                 let node = Node::For { init: None, cond, inc: None, then }.wrap();
-                return node;
+                return Ok(node);
             },
             _ => {
                 match cur.expect_symbol("{") {
                     // "{" compound_stmt
                     Ok(_) => {
                         let _ = &self.next_token();
-                        let node = self.compound_stmt();
-                        return node;
+                        let node = self.compound_stmt()?;
+                        return Ok(node);
                     },
                     // expr? ";"
                     Err(_) => {
@@ -445,12 +409,12 @@ impl<'a> Parser<'a> {
                             Ok(_) => {
                                 let _ = &self.next_token();
                                 let node = Node::Block { body: Vec::new() }.wrap();
-                                return node;
+                                return Ok(node);
                             },
                             Err(_) => {
-                                let node = self.expr();
-                                self.stmt_expect_symbol(";");
-                                return node;
+                                let node = self.expr()?;
+                                self.stmt_expect_symbol(";")?;
+                                return Ok(node);
                             }
                         }
                     }
@@ -459,132 +423,127 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn stmt_expect_symbol(&mut self, symbol: &str) {
+    fn stmt_expect_symbol(&mut self, symbol: &str) -> Result<(), CompileError> {
 
-        match self.cur_token().expect_symbol(symbol) {
-            Ok(_n) => {
-                let _ = &self.next_token();
-            },
-            Err(e) => {
-                cc_util::errors(&[&self.origin_formula, &e]);
-            },
-        };
+        let _ = self.cur_token().expect_symbol(symbol)?;
+        let _ = &self.next_token();
+        Ok(())
     }
 
 
-    fn expr(&mut self) -> Option<Box<Node>> {
+    fn expr(&mut self) -> Result<Option<Box<Node>>, CompileError> {
         self.assign()
     }
 
-    fn assign(&mut self) -> Option<Box<Node>> {
-        let mut node: Option<Box<Node>> = self.equality();
+    fn assign(&mut self) -> Result<Option<Box<Node>>, CompileError> {
+        let mut node: Option<Box<Node>> = self.equality()?;
 
         if let Ok(_) = self.cur_token().expect_symbol("=") {
             let _ = &self.next_token();
-            node = Node::Assign { lhs: node, rhs: self.assign(), }.wrap();
-            return node;
+            node = Node::Assign { lhs: node, rhs: self.assign()?, }.wrap();
+            return Ok(node);
         }
 
-        return node;
+        return Ok(node);
     }
 
-    fn equality(&mut self) -> Option<Box<Node>> {
-        let mut node: Option<Box<Node>> = self.relational();
+    fn equality(&mut self) -> Result<Option<Box<Node>>, CompileError> {
+        let mut node: Option<Box<Node>> = self.relational()?;
 
         loop {
 
             if let Ok(_) = self.cur_token().expect_symbol("==") {
                 let _ = &self.next_token();
-                node = Node::Eq { lhs: node, rhs: self.relational(), }.wrap();
+                node = Node::Eq { lhs: node, rhs: self.relational()?, }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol("!=") {
                 let _ = &self.next_token();
-                node = Node::Ne { lhs: node, rhs: self.relational(), }.wrap();
+                node = Node::Ne { lhs: node, rhs: self.relational()?, }.wrap();
                 continue;
             }
 
-            return node;
+            return Ok(node);
         }
     }
 
-    fn relational(&mut self) -> Option<Box<Node>> {
-        let mut node: Option<Box<Node>> = self.add();
+    fn relational(&mut self) -> Result<Option<Box<Node>>, CompileError> {
+        let mut node: Option<Box<Node>> = self.add()?;
 
         loop {
 
             if let Ok(_) = self.cur_token().expect_symbol("<") {
                 let _ = &self.next_token();
-                node = Node::Lt { lhs: node, rhs: self.add(), }.wrap();
+                node = Node::Lt { lhs: node, rhs: self.add()?, }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol("<=") {
                 let _ = &self.next_token();
-                node = Node::Le { lhs: node, rhs: self.add(), }.wrap();
+                node = Node::Le { lhs: node, rhs: self.add()?, }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol(">") {
                 let _ = &self.next_token();
-                node = Node::Lt { lhs: self.add(), rhs: node, }.wrap();
+                node = Node::Lt { lhs: self.add()?, rhs: node, }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol(">=") {
                 let _ = &self.next_token();
-                node = Node::Le { lhs: self.add(), rhs: node, }.wrap();
+                node = Node::Le { lhs: self.add()?, rhs: node, }.wrap();
                 continue;
             }
 
-            return node;
+            return Ok(node);
         }
     }
 
-    fn add(&mut self) -> Option<Box<Node>> {
-        let mut node: Option<Box<Node>> = self.mul();
+    fn add(&mut self) -> Result<Option<Box<Node>>, CompileError> {
+        let mut node: Option<Box<Node>> = self.mul()?;
 
         loop {
 
             if let Ok(_) = self.cur_token().expect_symbol("+") {
                 let _ = &self.next_token();
-                node = Node::Add { lhs: node, rhs: self.mul(), }.wrap();
+                node = Node::Add { lhs: node, rhs: self.mul()?, }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol("-") {
                 let _ = &self.next_token();
-                node = Node::Sub { lhs: node, rhs: self.mul(), }.wrap();
+                node = Node::Sub { lhs: node, rhs: self.mul()?, }.wrap();
                 continue;
             }
 
-            return node;
+            return Ok(node);
         }
     }
 
-    fn mul(&mut self) -> Option<Box<Node>> {
-        let mut node: Option<Box<Node>> = self.unary();
+    fn mul(&mut self) -> Result<Option<Box<Node>>, CompileError> {
+        let mut node: Option<Box<Node>> = self.unary()?;
 
         loop {
 
             if let Ok(_) = self.cur_token().expect_symbol("*") {
                 let _ = &self.next_token();
-                node = Node::Mul { lhs: node, rhs: self.unary(), }.wrap();
+                node = Node::Mul { lhs: node, rhs: self.unary()?, }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol("/") {
                 let _ = &self.next_token();
-                node = Node::Div { lhs: node, rhs: self.unary(), }.wrap();
+                node = Node::Div { lhs: node, rhs: self.unary()?, }.wrap();
                 continue;
             }
 
-            return node;
+            return Ok(node);
         }
     }
 
-    fn unary(&mut self) -> Option<Box<Node>> {
+    fn unary(&mut self) -> Result<Option<Box<Node>>, CompileError> {
         if let Ok(_) = self.cur_token().expect_symbol("+") {
             let _ = &self.next_token();
             return self.unary();
@@ -592,86 +551,66 @@ impl<'a> Parser<'a> {
         if let Ok(_) = self.cur_token().expect_symbol("-") {
             let _ = &self.next_token();
             let zero = Node::Num { value: 0, }.wrap();
-            return Node::Sub { lhs: zero, rhs: self.unary(), }.wrap();
+            return Ok(Node::Sub { lhs: zero, rhs: self.unary()?, }.wrap());
         }
         if let Ok(_) = self.cur_token().expect_symbol("&") {
             let _ = &self.next_token();
-            return Node::Addr { lhs: self.unary(), }.wrap();
+            return Ok(Node::Addr { lhs: self.unary()?, }.wrap());
         }
         if let Ok(_) = self.cur_token().expect_symbol("*") {
             let _ = &self.next_token();
-            return Node::Deref { lhs: self.unary(), }.wrap();
+            return Ok(Node::Deref { lhs: self.unary()?, }.wrap());
         }
 
         return self.primary();
     }
 
 
-    fn primary(&mut self) -> Option<Box<Node>> {
+    fn primary(&mut self) -> Result<Option<Box<Node>>, CompileError> {
 
         if let Ok(_) = self.cur_token().expect_symbol("(") {
             let _ = &self.next_token();
-            let node = self.expr();
+            let node = self.expr()?;
 
-            match self.cur_token().expect_symbol(")") {
-                Ok(_) => &self.next_token(),
-                Err(e) => {
-                    cc_util::errors(&[&self.origin_formula, &e]);
-                    //return None;
-                },
-            };
+            let _ = self.cur_token().expect_symbol(")")?;
+            let _ = &self.next_token();
 
-            return node;
+            return Ok(node);
         }
 
         if let Ok(name) = self.cur_token().expect_ident() {
             let name = name.to_string();
             let _ = &self.next_token();
 
-            let node = match self.cur_token().expect_symbol("(") {
+            match self.cur_token().expect_symbol("(") {
                 Ok(_) => {
                     // func call
-                    self.func_call(name)
+                    return self.func_call(name);
                 },
                 Err(_) => {
                     // local variable
-                    match self.cur_func_local_variable_offset(&name) {
-                        Ok(offset) => Node::Lvar{ offset }.wrap(),
-                        Err(e) => {
-                            cc_util::errors(&[&self.origin_formula, &e]);
-                            //return None;
-                        }
-                    }
+                    let offset = self.cur_func_local_variable_offset(&name)?;
+                    return Ok(Node::Lvar{ offset }.wrap());
                 }
-            };
-
-            return node;
+            }
         }
 
-
-        match self.cur_token().expect_number() {
-            Ok(n) => {
-                let node = Node::Num { value: n }.wrap();
-                let _ = &self.next_token();
-                return node;
-            },
-            Err(e) => {
-                cc_util::errors(&[&self.origin_formula, &e]);
-                //return None;
-            },
-        };
+        let n = self.cur_token().expect_number()?;
+        let node = Node::Num { value: n }.wrap();
+        let _ = &self.next_token();
+        return Ok(node);
     }
 
 
 
-    fn func_call(&mut self, name: String) -> Option<Box<Node>> {
+    fn func_call(&mut self, name: String) -> Result<Option<Box<Node>>, CompileError> {
 
         let _ = &self.next_token();
 
         let mut args: Vec<Option<Box<Node>>> = Vec::new();
 
         while let Err(_) = self.cur_token().expect_symbol(")") {
-            args.push(self.assign());
+            args.push(self.assign()?);
 
             if let Ok(_) = self.cur_token().expect_symbol(",") {
                 let _ = &self.next_token();
@@ -680,7 +619,7 @@ impl<'a> Parser<'a> {
 
         let _ = &self.next_token(); // skip ")"
 
-        Node::FuncCall { name, args, }.wrap()
+        Ok(Node::FuncCall { name, args, }.wrap())
     }
 }
 

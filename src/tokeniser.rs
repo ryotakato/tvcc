@@ -1,4 +1,5 @@
-use crate::cc_util;
+use crate::cc_util::CompileError;
+
 
 // the kind of token
 #[derive(Debug)]
@@ -67,37 +68,37 @@ impl Token {
 
     // if TokenKind is Reserved and op is expected, Ok
     // otherwise, error string
-    pub fn expect_symbol(&self, op: &str) -> Result<(), String> {
+    pub fn expect_symbol(&self, op: &str) -> Result<(), CompileError> {
         match &self.kind {
             TokenKind::Reserved(val) if val == op => Ok(()),
-            _ => Err(format!("{:>padding$} expected {}", '^', op, padding = self.loc+1))
+            _ => Err(CompileError::new(&[&format!("{:>padding$} expected {}", '^', op, padding = self.loc+1)]))
         }
     }
 
     // if TokenKind is Ident, Ok
     // otherwise, error string
-    pub fn expect_ident(&self) -> Result<&str, String> {
+    pub fn expect_ident(&self) -> Result<&str, CompileError> {
         match &self.kind {
             TokenKind::Ident(val) => Ok(val),
-            _ => Err(format!("{:>padding$} expected an ident", '^', padding = self.loc+1))
+            _ => Err(CompileError::new(&[&format!("{:>padding$} expected an ident", '^', padding = self.loc+1)]))
         }
     }
 
     // if TokenKind is Num, Ok and the value
     // otherwise, error string
-    pub fn expect_number(&self) -> Result<i32, String> {
+    pub fn expect_number(&self) -> Result<i32, CompileError> {
         match &self.kind {
             TokenKind::Num(_) => Ok(self.kind.num_val().unwrap()),
-            _ => Err(format!("{:>padding$} expected a number", '^', padding = self.loc+1))
+            _ => Err(CompileError::new(&[&format!("{:>padding$} expected a number", '^', padding = self.loc+1)]))
         }
     }
 
     // if TokenKind is Type, Ok
     // otherwise, error string
-    pub fn expect_type(&self) -> Result<&str, String> {
+    pub fn expect_type(&self) -> Result<&str, CompileError> {
         match &self.kind {
             TokenKind::Type(val) => Ok(val),
-            _ => Err(format!("{:>padding$} expected a type", '^', padding = self.loc+1))
+            _ => Err(CompileError::new(&[&format!("{:>padding$} expected a type", '^', padding = self.loc+1)]))
         }
     }
 
@@ -174,7 +175,7 @@ impl Tokeniser {
     }
 
     // change input formula into TokenList
-    pub fn tokenise(&self) -> TokenList {
+    pub fn tokenise(&self) -> Result<TokenList, CompileError> {
 
         let mut token_list = TokenList { head: None, origin_formula: self.formula.clone() };
 
@@ -276,7 +277,7 @@ impl Tokeniser {
             }
 
 
-            cc_util::errors(&[&token_list.origin_formula, format!("{:>padding$} Unexpected charactor", '^', padding = i+1).as_str()])
+            return Err(CompileError::new(&[&format!("{:>padding$} Unexpected charactor", '^', padding = i+1)]));
 
         }
 
@@ -293,7 +294,7 @@ impl Tokeniser {
 
         token_list.push_back(Token::new(TokenKind::Eof, len));
 
-        token_list
+        Ok(token_list)
     }
 }
 
