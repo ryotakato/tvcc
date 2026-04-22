@@ -107,7 +107,6 @@ impl Token {
 // the list of Token 
 pub struct TokenList {
     pub head: Option<Box<Token>>,
-    pub origin_formula: String
 }
 
 // the iterator of the TokenList
@@ -177,7 +176,7 @@ impl Tokeniser {
     // change input formula into TokenList
     pub fn tokenise(&self) -> Result<TokenList, CompileError> {
 
-        let mut token_list = TokenList { head: None, origin_formula: self.formula.clone() };
+        let mut token_list = TokenList { head: None };
 
         let mut i = 0;
         // for the number consisting of multiple charactors

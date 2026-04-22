@@ -5,56 +5,77 @@ use crate::cc_util::CompileError;
 use std::collections::HashMap;
 use std::str::FromStr;
 
+
+//pub struct Node {
+//    pub kind: NodeKind,
+//    pub ty: Ty
+//
+//}
+
 #[derive(Debug)]
-pub enum Node {
-    Add { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // +
-    Sub { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // -
-    Mul { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // * (multiply)
-    Div { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // /
-    Eq { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> },  // ==
-    Ne { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> },  // !=
-    Lt { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> },  // <
-    Le { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> },  // <=
-    Assign { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // =
+pub enum NodeKind {
+    Add { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> }, // +
+    Sub { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> }, // -
+    Mul { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> }, // * (multiply)
+    Div { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> }, // /
+    Eq { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> },  // ==
+    Ne { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> },  // !=
+    Lt { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> },  // <
+    Le { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> },  // <=
+    Assign { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> }, // =
     Lvar { offset: i32 }, // local variables + offset
     Num {value: i32 }, // integer + value
-    Return { lhs: Option<Box<Node>> }, // return
-    If { cond: Option<Box<Node>>, then: Option<Box<Node>>, else_then: Option<Box<Node>> }, // if
-    For { init: Option<Box<Node>>, cond: Option<Box<Node>>, inc: Option<Box<Node>>, then: Option<Box<Node>>}, // for or while
-    Block { body: Vec<Option<Box<Node>>> }, // block
-    FuncCall { name: String, args: Vec<Option<Box<Node>>> }, // func call
-    FuncDef { name: String, r_type: VarType, params: Vec<Option<Box<Node>>>, stack_size: i32, block: Option<Box<Node>> }, // func define
-    Addr { lhs: Option<Box<Node>> }, // & (pointer)
-    Deref { lhs: Option<Box<Node>> }, // * (pointer)
+    Return { lhs: Option<Box<NodeKind>> }, // return
+    If { cond: Option<Box<NodeKind>>, then: Option<Box<NodeKind>>, else_then: Option<Box<NodeKind>> }, // if
+    For { init: Option<Box<NodeKind>>, cond: Option<Box<NodeKind>>, inc: Option<Box<NodeKind>>, then: Option<Box<NodeKind>>}, // for or while
+    Block { body: Vec<Option<Box<NodeKind>>> }, // block
+    FuncCall { name: String, args: Vec<Option<Box<NodeKind>>> }, // func call
+    FuncDef { name: String, r_type: Ty, params: Vec<Option<Box<NodeKind>>>, stack_size: i32, block: Option<Box<NodeKind>> }, // func define
+    Addr { lhs: Option<Box<NodeKind>> }, // & (pointer)
+    Deref { lhs: Option<Box<NodeKind>> }, // * (pointer)
 }
 
-impl Node {
-    fn wrap(self) -> Option<Box<Node>> {
+impl NodeKind {
+    fn wrap(self) -> Option<Box<NodeKind>> {
         Some(Box::new(self))
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum VarType {
+pub enum Ty {
     Int,
-    Pointer { base: Option<Box<VarType>> },
+    Pointer { base: Option<Box<Ty>> },
 }
 
-impl FromStr for VarType {
+impl FromStr for Ty {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "int" => Ok(VarType::Int),
+            "int" => Ok(Ty::Int),
             _ => Err(()),
         }
     }
 }
 
-impl VarType {
-    fn new(base: VarType) -> VarType {
-        VarType::Pointer {
+impl Ty {
+    fn new_pointer(base: Ty) -> Ty {
+        Ty::Pointer {
             base: Some(Box::new(base))
+        }
+    }
+
+    fn is_int(self) -> bool {
+        match self {
+            Ty::Int => true,
+            _ => false,
+        }
+    }
+
+    fn is_pointer(self) -> bool {
+        match self {
+            Ty::Pointer { base: _ } => true,
+            _ => false,
         }
     }
 }
@@ -63,7 +84,7 @@ impl VarType {
 // struct for local variales 
 struct LocalVariable {
     latest_offset: i32,
-    variables: HashMap<String, (i32, VarType)>,
+    variables: HashMap<String, (i32, Ty)>,
 }
 
 impl LocalVariable {
@@ -74,7 +95,7 @@ impl LocalVariable {
         }
     }
 
-    fn add_variable(&mut self, variale_name: String, v_type: VarType) -> bool {
+    fn add_variable(&mut self, variale_name: String, v_type: Ty) -> bool {
         match self.variables.entry(variale_name) {
             std::collections::hash_map::Entry::Occupied(_entry) => false,
             std::collections::hash_map::Entry::Vacant(entry) => {
@@ -97,7 +118,6 @@ impl LocalVariable {
 
 pub struct Parser<'a> {
     token_iter: TokenListIterator<'a>,
-    origin_formula: &'a str,
     cur_func: String,
     local_variables: HashMap<String, LocalVariable>,
 }
@@ -106,12 +126,10 @@ impl<'a> Parser<'a> {
     pub fn new(token_list: &'a TokenList) -> Parser<'a> {
 
         let token_iter: TokenListIterator<'a> = token_list.iter();
-        let origin_formula = &token_list.origin_formula;
         let local_variables = HashMap::new();
 
         Parser {
             token_iter,
-            origin_formula,
             cur_func: Default::default(),
             local_variables,
         }
@@ -122,18 +140,16 @@ impl<'a> Parser<'a> {
         self.local_variables.insert(name.to_string(), LocalVariable::new());
     }
 
-    fn cur_func_add_local_variable(&mut self, variale_name: &str, v_type_name: &str) -> Result<(), CompileError> {
+    //fn cur_func_add_local_variable(&mut self, variale_name: &str, v_type_name: &str) -> Result<(), CompileError> {
+    //    match v_type_name.parse::<Ty>() {
+    //        Ok(v_type) => self.cur_func_add_local_variable_by_type(variale_name, v_type),
+    //        Err(_) => {
+    //            Err(CompileError::new(&[&format!("type: {} is not defined in {}", v_type_name, &self.cur_func)]))
+    //        }
+    //    }
+    //}
 
-        match v_type_name.parse::<VarType>() {
-            Ok(v_type) => self.cur_func_add_local_variable_by_type(variale_name, v_type),
-            Err(_) => {
-                Err(CompileError::new(&[&format!("type: {} is not defined in {}", v_type_name, &self.cur_func)]))
-            }
-        }
-
-    }
-
-    fn cur_func_add_local_variable_by_type(&mut self, variale_name: &str, v_type: VarType) -> Result<(), CompileError> {
+    fn cur_func_add_local_variable_by_type(&mut self, variale_name: &str, v_type: Ty) -> Result<(), CompileError> {
 
         if self.local_variables.get_mut(&self.cur_func).unwrap().add_variable(variale_name.to_string(), v_type) {
             Ok(())
@@ -172,11 +188,11 @@ impl<'a> Parser<'a> {
 
 
 
-    pub fn parse(&mut self) -> Result<Vec<Option<Box<Node>>>, CompileError> {
+    pub fn parse(&mut self) -> Result<Vec<Option<Box<NodeKind>>>, CompileError> {
 
         //program
 
-        let mut functions: Vec<Option<Box<Node>>> = Vec::new();
+        let mut functions: Vec<Option<Box<NodeKind>>> = Vec::new();
 
         while !self.cur_token().at_eof() {
             functions.push(self.function()?);
@@ -185,9 +201,9 @@ impl<'a> Parser<'a> {
         Ok(functions)
     }
 
-    fn function(&mut self) -> Result<Option<Box<Node>>, CompileError> {
+    fn function(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
         // return type
-        let r_type: VarType = self.declspec()?;
+        let r_type: Ty = self.declspec()?;
 
         // func name
         let name = self.cur_token().expect_ident()?.to_string();
@@ -199,7 +215,7 @@ impl<'a> Parser<'a> {
         // argument
         self.stmt_expect_symbol("(")?;
 
-        let mut params: Vec<Option<Box<Node>>> = Vec::new();
+        let mut params: Vec<Option<Box<NodeKind>>> = Vec::new();
 
         // func args
         while let Err(_) = self.cur_token().expect_symbol(")") {
@@ -209,12 +225,12 @@ impl<'a> Parser<'a> {
             }
 
             // identify local variable
-            let v_type: VarType = self.declspec()?;
+            let v_type: Ty = self.declspec()?;
 
             // define local variable
             let v_name = self.declarator(v_type)?;
             let offset = self.cur_func_local_variable_offset(&v_name)?; // definitely success because it is just after add variable
-            params.push(Node::Lvar{ offset }.wrap());
+            params.push(NodeKind::Lvar{ offset }.wrap());
 
         }
 
@@ -226,16 +242,16 @@ impl<'a> Parser<'a> {
 
         let stack_size = self.cur_func_calculate_stack_size();
 
-        let node = Node::FuncDef { name, r_type, params, stack_size, block }.wrap();
+        let node = NodeKind::FuncDef { name, r_type, params, stack_size, block }.wrap();
         return Ok(node);
     }
 
 
 
     // compound_stmt = (declaration | stmt)* "}"
-    fn compound_stmt(&mut self) -> Result<Option<Box<Node>>, CompileError> {
+    fn compound_stmt(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
 
-        let mut stmts: Vec<Option<Box<Node>>> = Vec::new();
+        let mut stmts: Vec<Option<Box<NodeKind>>> = Vec::new();
         while let Err(_) = self.cur_token().expect_symbol("}") {
 
             if let Token { kind: TokenKind::Type(_), .. } = self.cur_token() {
@@ -246,16 +262,16 @@ impl<'a> Parser<'a> {
         }
         self.stmt_expect_symbol("}")?;
 
-        let node = Node::Block { body: stmts, }.wrap();
+        let node = NodeKind::Block { body: stmts, }.wrap();
         return Ok(node);
     }
 
 
 
-    fn declaration(&mut self) -> Result<Option<Box<Node>>, CompileError> {
-        let base_type: VarType = self.declspec()?;
+    fn declaration(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
+        let base_type: Ty = self.declspec()?;
 
-        let mut assigns: Vec<Option<Box<Node>>> = Vec::new();
+        let mut assigns: Vec<Option<Box<NodeKind>>> = Vec::new();
         while let Err(_) = self.cur_token().expect_symbol(";") {
 
             if let Ok(_) = self.cur_token().expect_symbol(",") {
@@ -271,21 +287,21 @@ impl<'a> Parser<'a> {
             let _ = &self.next_token();
 
             let offset = self.cur_func_local_variable_offset(&v_name)?; // definitely success because it is just after add variable
-            assigns.push(Node::Assign { lhs: Node::Lvar { offset }.wrap(), rhs: self.expr()?, }.wrap());
+            assigns.push(NodeKind::Assign { lhs: NodeKind::Lvar { offset }.wrap(), rhs: self.expr()?, }.wrap());
 
 
         }
 
-        let node = Node::Block { body: assigns, }.wrap();
+        let node = NodeKind::Block { body: assigns, }.wrap();
         return Ok(node);
     }
 
-    fn declspec(&mut self) -> Result<VarType, CompileError> {
+    fn declspec(&mut self) -> Result<Ty, CompileError> {
         let v_type_name = self.cur_token().expect_type()?.to_string();
 
         let _ = &self.next_token();
 
-        match v_type_name.parse::<VarType>() {
+        match v_type_name.parse::<Ty>() {
             Ok(v_type) => Ok(v_type),
             Err(_) => {
                 Err(CompileError::new(&[&format!("type: {} is not defined in {}", v_type_name, &self.cur_func)]))
@@ -294,11 +310,11 @@ impl<'a> Parser<'a> {
 
     }
 
-    fn declarator(&mut self, base_type: VarType) -> Result<String, CompileError> {
-        // while "*" continues, creates VarType including original type
+    fn declarator(&mut self, base_type: Ty) -> Result<String, CompileError> {
+        // while "*" continues, creates Ty including original type
         let mut ty = base_type;
         while let Ok(_) = self.cur_token().expect_symbol("*") {
-            ty = VarType::new(ty);
+            ty = Ty::new_pointer(ty);
             let _ = &self.next_token();
         }
 
@@ -313,7 +329,7 @@ impl<'a> Parser<'a> {
 
 
 
-    fn stmt(&mut self) -> Result<Option<Box<Node>>, CompileError> {
+    fn stmt(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
 
 
         let cur = self.cur_token();
@@ -322,7 +338,7 @@ impl<'a> Parser<'a> {
             // "return" expr ";"
             Token { kind: TokenKind::Return, .. } => {
                 let _ = &self.next_token();
-                let node = Node::Return { lhs: self.expr()?, }.wrap();
+                let node = NodeKind::Return { lhs: self.expr()?, }.wrap();
                 self.stmt_expect_symbol(";")?;
                 return Ok(node);
             },
@@ -344,11 +360,11 @@ impl<'a> Parser<'a> {
                 match self.cur_token().at_else() {
                     true => {
                         let _ = &self.next_token();
-                        let node = Node::If { cond, then, else_then: self.stmt()? }.wrap();
+                        let node = NodeKind::If { cond, then, else_then: self.stmt()? }.wrap();
                         return Ok(node);
                     },
                     false => {
-                        let node = Node::If { cond, then, else_then: None }.wrap();
+                        let node = NodeKind::If { cond, then, else_then: None }.wrap();
                         return Ok(node);
                     }
                 }
@@ -384,7 +400,7 @@ impl<'a> Parser<'a> {
                 let _ = &self.next_token();
                 let then = self.stmt()?;
 
-                let node = Node::For { init, cond, inc, then }.wrap();
+                let node = NodeKind::For { init, cond, inc, then }.wrap();
                 return Ok(node);
 
             },
@@ -401,7 +417,7 @@ impl<'a> Parser<'a> {
                 // then
                 let then = self.stmt()?;
 
-                let node = Node::For { init: None, cond, inc: None, then }.wrap();
+                let node = NodeKind::For { init: None, cond, inc: None, then }.wrap();
                 return Ok(node);
             },
             _ => {
@@ -417,7 +433,7 @@ impl<'a> Parser<'a> {
                         match cur.expect_symbol(";") {
                             Ok(_) => {
                                 let _ = &self.next_token();
-                                let node = Node::Block { body: Vec::new() }.wrap();
+                                let node = NodeKind::Block { body: Vec::new() }.wrap();
                                 return Ok(node);
                             },
                             Err(_) => {
@@ -440,36 +456,36 @@ impl<'a> Parser<'a> {
     }
 
 
-    fn expr(&mut self) -> Result<Option<Box<Node>>, CompileError> {
+    fn expr(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
         self.assign()
     }
 
-    fn assign(&mut self) -> Result<Option<Box<Node>>, CompileError> {
-        let mut node: Option<Box<Node>> = self.equality()?;
+    fn assign(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
+        let mut node: Option<Box<NodeKind>> = self.equality()?;
 
         if let Ok(_) = self.cur_token().expect_symbol("=") {
             let _ = &self.next_token();
-            node = Node::Assign { lhs: node, rhs: self.assign()?, }.wrap();
+            node = NodeKind::Assign { lhs: node, rhs: self.assign()?, }.wrap();
             return Ok(node);
         }
 
         return Ok(node);
     }
 
-    fn equality(&mut self) -> Result<Option<Box<Node>>, CompileError> {
-        let mut node: Option<Box<Node>> = self.relational()?;
+    fn equality(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
+        let mut node: Option<Box<NodeKind>> = self.relational()?;
 
         loop {
 
             if let Ok(_) = self.cur_token().expect_symbol("==") {
                 let _ = &self.next_token();
-                node = Node::Eq { lhs: node, rhs: self.relational()?, }.wrap();
+                node = NodeKind::Eq { lhs: node, rhs: self.relational()?, }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol("!=") {
                 let _ = &self.next_token();
-                node = Node::Ne { lhs: node, rhs: self.relational()?, }.wrap();
+                node = NodeKind::Ne { lhs: node, rhs: self.relational()?, }.wrap();
                 continue;
             }
 
@@ -477,32 +493,32 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn relational(&mut self) -> Result<Option<Box<Node>>, CompileError> {
-        let mut node: Option<Box<Node>> = self.add()?;
+    fn relational(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
+        let mut node: Option<Box<NodeKind>> = self.add()?;
 
         loop {
 
             if let Ok(_) = self.cur_token().expect_symbol("<") {
                 let _ = &self.next_token();
-                node = Node::Lt { lhs: node, rhs: self.add()?, }.wrap();
+                node = NodeKind::Lt { lhs: node, rhs: self.add()?, }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol("<=") {
                 let _ = &self.next_token();
-                node = Node::Le { lhs: node, rhs: self.add()?, }.wrap();
+                node = NodeKind::Le { lhs: node, rhs: self.add()?, }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol(">") {
                 let _ = &self.next_token();
-                node = Node::Lt { lhs: self.add()?, rhs: node, }.wrap();
+                node = NodeKind::Lt { lhs: self.add()?, rhs: node, }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol(">=") {
                 let _ = &self.next_token();
-                node = Node::Le { lhs: self.add()?, rhs: node, }.wrap();
+                node = NodeKind::Le { lhs: self.add()?, rhs: node, }.wrap();
                 continue;
             }
 
@@ -510,20 +526,20 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn add(&mut self) -> Result<Option<Box<Node>>, CompileError> {
-        let mut node: Option<Box<Node>> = self.mul()?;
+    fn add(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
+        let mut node: Option<Box<NodeKind>> = self.mul()?;
 
         loop {
 
             if let Ok(_) = self.cur_token().expect_symbol("+") {
                 let _ = &self.next_token();
-                node = Node::Add { lhs: node, rhs: self.mul()?, }.wrap();
+                node = NodeKind::Add { lhs: node, rhs: self.mul()?, }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol("-") {
                 let _ = &self.next_token();
-                node = Node::Sub { lhs: node, rhs: self.mul()?, }.wrap();
+                node = NodeKind::Sub { lhs: node, rhs: self.mul()?, }.wrap();
                 continue;
             }
 
@@ -531,20 +547,20 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn mul(&mut self) -> Result<Option<Box<Node>>, CompileError> {
-        let mut node: Option<Box<Node>> = self.unary()?;
+    fn mul(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
+        let mut node: Option<Box<NodeKind>> = self.unary()?;
 
         loop {
 
             if let Ok(_) = self.cur_token().expect_symbol("*") {
                 let _ = &self.next_token();
-                node = Node::Mul { lhs: node, rhs: self.unary()?, }.wrap();
+                node = NodeKind::Mul { lhs: node, rhs: self.unary()?, }.wrap();
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol("/") {
                 let _ = &self.next_token();
-                node = Node::Div { lhs: node, rhs: self.unary()?, }.wrap();
+                node = NodeKind::Div { lhs: node, rhs: self.unary()?, }.wrap();
                 continue;
             }
 
@@ -552,30 +568,30 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn unary(&mut self) -> Result<Option<Box<Node>>, CompileError> {
+    fn unary(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
         if let Ok(_) = self.cur_token().expect_symbol("+") {
             let _ = &self.next_token();
             return self.unary();
         }
         if let Ok(_) = self.cur_token().expect_symbol("-") {
             let _ = &self.next_token();
-            let zero = Node::Num { value: 0, }.wrap();
-            return Ok(Node::Sub { lhs: zero, rhs: self.unary()?, }.wrap());
+            let zero = NodeKind::Num { value: 0, }.wrap();
+            return Ok(NodeKind::Sub { lhs: zero, rhs: self.unary()?, }.wrap());
         }
         if let Ok(_) = self.cur_token().expect_symbol("&") {
             let _ = &self.next_token();
-            return Ok(Node::Addr { lhs: self.unary()?, }.wrap());
+            return Ok(NodeKind::Addr { lhs: self.unary()?, }.wrap());
         }
         if let Ok(_) = self.cur_token().expect_symbol("*") {
             let _ = &self.next_token();
-            return Ok(Node::Deref { lhs: self.unary()?, }.wrap());
+            return Ok(NodeKind::Deref { lhs: self.unary()?, }.wrap());
         }
 
         return self.primary();
     }
 
 
-    fn primary(&mut self) -> Result<Option<Box<Node>>, CompileError> {
+    fn primary(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
 
         if let Ok(_) = self.cur_token().expect_symbol("(") {
             let _ = &self.next_token();
@@ -599,24 +615,24 @@ impl<'a> Parser<'a> {
                 Err(_) => {
                     // local variable
                     let offset = self.cur_func_local_variable_offset(&name)?;
-                    return Ok(Node::Lvar{ offset }.wrap());
+                    return Ok(NodeKind::Lvar{ offset }.wrap());
                 }
             }
         }
 
         let n = self.cur_token().expect_number()?;
-        let node = Node::Num { value: n }.wrap();
+        let node = NodeKind::Num { value: n }.wrap();
         let _ = &self.next_token();
         return Ok(node);
     }
 
 
 
-    fn func_call(&mut self, name: String) -> Result<Option<Box<Node>>, CompileError> {
+    fn func_call(&mut self, name: String) -> Result<Option<Box<NodeKind>>, CompileError> {
 
         let _ = &self.next_token();
 
-        let mut args: Vec<Option<Box<Node>>> = Vec::new();
+        let mut args: Vec<Option<Box<NodeKind>>> = Vec::new();
 
         while let Err(_) = self.cur_token().expect_symbol(")") {
             args.push(self.assign()?);
@@ -628,7 +644,7 @@ impl<'a> Parser<'a> {
 
         let _ = &self.next_token(); // skip ")"
 
-        Ok(Node::FuncCall { name, args, }.wrap())
+        Ok(NodeKind::FuncCall { name, args, }.wrap())
     }
 }
 
