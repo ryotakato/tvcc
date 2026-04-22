@@ -117,12 +117,17 @@ try 17 'int main() { return aaa(9) + aaa(8); } int aaa(int x) { return x; }'
 try 10 'int main() { return aaa(10); } int aaa(int x) { return bbb(x); } int bbb(int x) { return x;}'
 
 try 3 'int main() { int x=3; return *&x; }'
-try 3 'int main() { int x = 3; int y=&x; int z=&y; return **z; }'
+try 3 'int main() { int x = 3; int *y=&x; int **z=&y; return **z; }'
 try 5 'int main() { int x=3; int y=5; return *(&x-8); }'
 try 3 'int main() { int x=3; int y=5; return *(&y+8); }'
-try 5 'int main() { int x=3; int y=&x; *y=5; return x; }'
+try 5 'int main() { int x=3; int *y=&x; *y=5; return x; }'
 try 7 'int main() { int x=3; int y=5; *(&x-8)=7; return y; }'
 try 7 'int main() { int x=3; int y=5; *(&y+8)=7; return x; }'
+try 8 'int main() { int x, y; x=3; y=5; return x+y; }'
+try 8 'int main() { int x=3, y=5; return x+y; }'
+
+try 5 'int main() { int x=3; aaa(&x); return x; } int aaa(int *y) { *y = 5; return y; }'
+try 7 'int main() { int x=3; aaa(&x); return x; } int aaa(int *y) { bbb(&y); return y; } int bbb(int **z) { **z=7; return z;}'
 
 
 echo OK

@@ -23,7 +23,7 @@ pub enum Node {
     For { init: Option<Box<Node>>, cond: Option<Box<Node>>, inc: Option<Box<Node>>, then: Option<Box<Node>>}, // for or while
     Block { body: Vec<Option<Box<Node>>> }, // block
     FuncCall { name: String, args: Vec<Option<Box<Node>>> }, // func call
-    FuncDef { name: String, r_type: String, params: Vec<Option<Box<Node>>>, stack_size: i32, block: Option<Box<Node>> }, // func define
+    FuncDef { name: String, r_type: VarType, params: Vec<Option<Box<Node>>>, stack_size: i32, block: Option<Box<Node>> }, // func define
     Addr { lhs: Option<Box<Node>> }, // & (pointer)
     Deref { lhs: Option<Box<Node>> }, // * (pointer)
 }
@@ -37,6 +37,7 @@ impl Node {
 #[derive(Debug, Clone)]
 pub enum VarType {
     Int,
+    Pointer { base: Option<Box<VarType>> },
 }
 
 impl FromStr for VarType {
@@ -48,7 +49,14 @@ impl FromStr for VarType {
             _ => Err(()),
         }
     }
+}
 
+impl VarType {
+    fn new(base: VarType) -> VarType {
+        VarType::Pointer {
+            base: Some(Box::new(base))
+        }
+    }
 }
 
 
@@ -179,9 +187,7 @@ impl<'a> Parser<'a> {
 
     fn function(&mut self) -> Result<Option<Box<Node>>, CompileError> {
         // return type
-        let r_type = self.cur_token().expect_type()?.to_string();
-
-        let _ = &self.next_token();
+        let r_type: VarType = self.declspec()?;
 
         // func name
         let name = self.cur_token().expect_ident()?.to_string();
@@ -195,23 +201,21 @@ impl<'a> Parser<'a> {
 
         let mut params: Vec<Option<Box<Node>>> = Vec::new();
 
+        // func args
         while let Err(_) = self.cur_token().expect_symbol(")") {
-
-            // identify local variable
-            let v_type = self.cur_token().expect_type()?.to_string();
-            let _ = &self.next_token();
-
-            let v_name = self.cur_token().expect_ident()?.to_string();
-            let _ = &self.next_token();
-
-            // define local variable
-            let _ = self.cur_func_add_local_variable(&v_name, &v_type)?;
-            let offset = self.cur_func_local_variable_offset(&v_name)?; // definitely success because it is just after add variable
-            params.push(Node::Lvar{ offset }.wrap());
 
             if let Ok(_) = self.cur_token().expect_symbol(",") {
                 let _ = &self.next_token();
             }
+
+            // identify local variable
+            let v_type: VarType = self.declspec()?;
+
+            // define local variable
+            let v_name = self.declarator(v_type)?;
+            let offset = self.cur_func_local_variable_offset(&v_name)?; // definitely success because it is just after add variable
+            params.push(Node::Lvar{ offset }.wrap());
+
         }
 
         let _ = &self.next_token(); // skip ")"
@@ -291,11 +295,17 @@ impl<'a> Parser<'a> {
     }
 
     fn declarator(&mut self, base_type: VarType) -> Result<String, CompileError> {
+        // while "*" continues, creates VarType including original type
+        let mut ty = base_type;
+        while let Ok(_) = self.cur_token().expect_symbol("*") {
+            ty = VarType::new(ty);
+            let _ = &self.next_token();
+        }
 
         let v_name = self.cur_token().expect_ident()?.to_string();
 
         // define local variable
-        let _ = self.cur_func_add_local_variable_by_type(&v_name, base_type)?;
+        let _ = self.cur_func_add_local_variable_by_type(&v_name, ty)?;
 
         let _ = &self.next_token();
         return Ok(v_name);
@@ -334,8 +344,7 @@ impl<'a> Parser<'a> {
                 match self.cur_token().at_else() {
                     true => {
                         let _ = &self.next_token();
-                        let else_then = self.stmt()?;
-                        let node = Node::If { cond, then, else_then }.wrap();
+                        let node = Node::If { cond, then, else_then: self.stmt()? }.wrap();
                         return Ok(node);
                     },
                     false => {
