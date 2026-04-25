@@ -1,4 +1,4 @@
-use crate::parser::{ NodeKind };
+use crate::parser::{ Node, NodeKind };
 
 use crate::cc_util::CompileError;
 
@@ -19,7 +19,7 @@ impl Generator {
         }
     }
 
-    pub fn generate_codes(&mut self, nodes: Vec<Option<Box<NodeKind>>>) -> Result<(), CompileError> {
+    pub fn generate_codes(&mut self, nodes: Vec<Option<Box<Node>>>) -> Result<(), CompileError> {
 
 
         // check node
@@ -37,7 +37,7 @@ impl Generator {
                 Some(n) => n,
                 None => return Ok(()),
             };
-            let NodeKind::FuncDef { name, r_type, params, stack_size, block } = *node else {
+            let NodeKind::FuncDef { name, r_type:_, params, stack_size, block } = (*node).kind else {
                 return Err(CompileError::new(&["a top-level element must be function definition"]));
             };
 
@@ -63,7 +63,7 @@ impl Generator {
                     Some(n) => n,
                     None => continue,
                 };
-                if let NodeKind::Lvar { offset } = **pn {
+                if let NodeKind::Lvar { name:_, offset, ty:_ } = (**pn).kind {
 
                     println!("  mov [rbp-{}], {}", offset, &Self::ARGS_REGISTERS[paramc]);
                     println!();
@@ -90,14 +90,14 @@ impl Generator {
         Ok(())
     }
 
-    fn generate(&mut self, nd: Option<Box<NodeKind>>) -> Result<(), CompileError> {
+    fn generate(&mut self, nd: Option<Box<Node>>) -> Result<(), CompileError> {
 
         let node = match nd {
             Some(n) => n,
             None => return Ok(()),
         };
 
-        match *node {
+        match (*node).kind {
             NodeKind::If { cond, then, else_then } => {
                 self.count = self.count + 1;
                 self.generate(cond)?;
@@ -216,7 +216,7 @@ impl Generator {
 
 
 
-        match *node {
+        match (*node).kind {
             NodeKind::Add { lhs, rhs } => { 
                 self.gen_binary(lhs, rhs)?;
                 println!("  add rax, rdi")
@@ -267,7 +267,7 @@ impl Generator {
         Ok(())
     }
 
-    fn gen_binary(&mut self, lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>>) -> Result<(), CompileError> {
+    fn gen_binary(&mut self, lhs: Option<Box<Node>>, rhs: Option<Box<Node>>) -> Result<(), CompileError> {
 
         self.generate(lhs)?;
         self.generate(rhs)?;
@@ -279,9 +279,9 @@ impl Generator {
     }
 
 
-    fn gen_lval(&mut self, node: Box<NodeKind>) -> Result<(), CompileError> {
-        match *node {
-            NodeKind::Lvar { offset } => {
+    fn gen_lval(&mut self, node: Box<Node>) -> Result<(), CompileError> {
+        match (*node).kind {
+            NodeKind::Lvar { name:_, offset, ty:_ } => {
                 // calcurate local variable address position. so, when this finishes, the top of stack is address value
                 println!("  mov rax, rbp");
                 println!("  sub rax, {}", offset);

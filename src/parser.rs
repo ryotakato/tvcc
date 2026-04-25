@@ -6,38 +6,86 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 
-//pub struct Node {
-//    pub kind: NodeKind,
-//    pub ty: Ty
-//
-//}
+#[derive(Debug)]
+pub struct Node {
+    pub kind: NodeKind,
+    pub ty: Option<Ty>
+}
+
+impl Node {
+
+    fn ty(&mut self) -> &mut Ty {
+        // for lazy evaluation, cache in ty property (Option)
+        self.ty.get_or_insert_with(|| {
+
+            match &mut self.kind {
+                NodeKind::Add {lhs, .. } | NodeKind::Sub {lhs, .. }  | NodeKind::Mul {lhs, .. }  | NodeKind::Div {lhs, .. }  | NodeKind::Assign {lhs, .. } => {
+                    // extract the type of lhs, and clone
+                    let mut bx = lhs.as_mut().unwrap();
+                    (**(&mut bx)).ty().clone()
+                },
+                NodeKind::Eq { .. }  | NodeKind::Ne {.. }  | NodeKind::Lt {.. }  | NodeKind::Le {.. }  | NodeKind::Num {.. }  | NodeKind::FuncCall {.. } => {
+                    Ty::Int
+                },
+                NodeKind::Lvar { name, offset:_, ty } => {
+                    ty.clone()
+                },
+                NodeKind::Addr { lhs } => {
+                    // extract the type of lhs, and create new pointer based on the type of lhs
+                    let mut bx = lhs.as_mut().unwrap();
+                    let ty = (**(&mut bx)).ty().clone();
+                    Ty::new_pointer(ty)
+                },
+                NodeKind::Deref { lhs } => {
+                    // extract the type of lhs, and clone
+                    let mut bx = lhs.as_mut().unwrap();
+                    let ty = (**(&mut bx)).ty().clone();
+
+                    match ty {
+                        Ty::Pointer { base } => {
+                            (*base.unwrap()).clone()
+                        },
+                        _ => Ty::Int,
+                    }
+                },
+                _ => Ty::Int,
+            }
+
+        })
+    }
+
+}
 
 #[derive(Debug)]
 pub enum NodeKind {
-    Add { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> }, // +
-    Sub { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> }, // -
-    Mul { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> }, // * (multiply)
-    Div { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> }, // /
-    Eq { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> },  // ==
-    Ne { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> },  // !=
-    Lt { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> },  // <
-    Le { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> },  // <=
-    Assign { lhs: Option<Box<NodeKind>>, rhs: Option<Box<NodeKind>> }, // =
-    Lvar { offset: i32 }, // local variables + offset
+    Add { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // +
+    Sub { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // -
+    Mul { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // * (multiply)
+    Div { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // /
+    Eq { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> },  // ==
+    Ne { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> },  // !=
+    Lt { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> },  // <
+    Le { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> },  // <=
+    Assign { lhs: Option<Box<Node>>, rhs: Option<Box<Node>> }, // =
+    Lvar { name: String, offset: i32, ty:Ty }, // local variables + name, offset
     Num {value: i32 }, // integer + value
-    Return { lhs: Option<Box<NodeKind>> }, // return
-    If { cond: Option<Box<NodeKind>>, then: Option<Box<NodeKind>>, else_then: Option<Box<NodeKind>> }, // if
-    For { init: Option<Box<NodeKind>>, cond: Option<Box<NodeKind>>, inc: Option<Box<NodeKind>>, then: Option<Box<NodeKind>>}, // for or while
-    Block { body: Vec<Option<Box<NodeKind>>> }, // block
-    FuncCall { name: String, args: Vec<Option<Box<NodeKind>>> }, // func call
-    FuncDef { name: String, r_type: Ty, params: Vec<Option<Box<NodeKind>>>, stack_size: i32, block: Option<Box<NodeKind>> }, // func define
-    Addr { lhs: Option<Box<NodeKind>> }, // & (pointer)
-    Deref { lhs: Option<Box<NodeKind>> }, // * (pointer)
+    Return { lhs: Option<Box<Node>> }, // return
+    If { cond: Option<Box<Node>>, then: Option<Box<Node>>, else_then: Option<Box<Node>> }, // if
+    For { init: Option<Box<Node>>, cond: Option<Box<Node>>, inc: Option<Box<Node>>, then: Option<Box<Node>>}, // for or while
+    Block { body: Vec<Option<Box<Node>>> }, // block
+    FuncCall { name: String, args: Vec<Option<Box<Node>>> }, // func call
+    FuncDef { name: String, r_type: Ty, params: Vec<Option<Box<Node>>>, stack_size: i32, block: Option<Box<Node>> }, // func define
+    Addr { lhs: Option<Box<Node>> }, // & (pointer)
+    Deref { lhs: Option<Box<Node>> }, // * (pointer)
 }
 
 impl NodeKind {
-    fn wrap(self) -> Option<Box<NodeKind>> {
-        Some(Box::new(self))
+    fn wrap(self) -> Option<Box<Node>> {
+        Some(Box::new(Node { kind: self, ty: None }))
+    }
+
+    fn eight() -> Option<Box<Node>> {
+        NodeKind::Num { value: 8 }.wrap()
     }
 }
 
@@ -62,20 +110,6 @@ impl Ty {
     fn new_pointer(base: Ty) -> Ty {
         Ty::Pointer {
             base: Some(Box::new(base))
-        }
-    }
-
-    fn is_int(self) -> bool {
-        match self {
-            Ty::Int => true,
-            _ => false,
-        }
-    }
-
-    fn is_pointer(self) -> bool {
-        match self {
-            Ty::Pointer { base: _ } => true,
-            _ => false,
         }
     }
 }
@@ -106,9 +140,9 @@ impl LocalVariable {
         }
     }
 
-    fn find_offset(&mut self, variale_name: &str) -> Option<i32> {
+    fn find_variable(&mut self, variale_name: &str) -> Option<(i32, Ty)> {
         match self.variables.get(variale_name) {
-            Some((offset, _)) => Some(*offset),
+            Some((offset, ty)) => Some((*offset, ty.clone())), // TODO although "find" method, it is need "clone". waste of memory
             _ => None
         }
     }
@@ -158,9 +192,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn cur_func_local_variable_offset(&mut self, variale_name: &str) -> Result<i32, CompileError> {
-        match self.local_variables.get_mut(&self.cur_func).unwrap().find_offset(variale_name) {
-            Some(offset) => Ok(offset),
+    fn cur_func_local_variable_offset(&mut self, variale_name: &str) -> Result<(i32, Ty), CompileError> {
+        match self.local_variables.get_mut(&self.cur_func).unwrap().find_variable(variale_name) {
+            Some((offset, ty)) => Ok((offset, ty)),
             None => Err(CompileError::new(&[&format!("variable: {} is not defined in {}", variale_name, &self.cur_func)]))
         }
     }
@@ -188,11 +222,11 @@ impl<'a> Parser<'a> {
 
 
 
-    pub fn parse(&mut self) -> Result<Vec<Option<Box<NodeKind>>>, CompileError> {
+    pub fn parse(&mut self) -> Result<Vec<Option<Box<Node>>>, CompileError> {
 
         //program
 
-        let mut functions: Vec<Option<Box<NodeKind>>> = Vec::new();
+        let mut functions: Vec<Option<Box<Node>>> = Vec::new();
 
         while !self.cur_token().at_eof() {
             functions.push(self.function()?);
@@ -201,7 +235,7 @@ impl<'a> Parser<'a> {
         Ok(functions)
     }
 
-    fn function(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
+    fn function(&mut self) -> Result<Option<Box<Node>>, CompileError> {
         // return type
         let r_type: Ty = self.declspec()?;
 
@@ -215,7 +249,7 @@ impl<'a> Parser<'a> {
         // argument
         self.stmt_expect_symbol("(")?;
 
-        let mut params: Vec<Option<Box<NodeKind>>> = Vec::new();
+        let mut params: Vec<Option<Box<Node>>> = Vec::new();
 
         // func args
         while let Err(_) = self.cur_token().expect_symbol(")") {
@@ -228,9 +262,9 @@ impl<'a> Parser<'a> {
             let v_type: Ty = self.declspec()?;
 
             // define local variable
-            let v_name = self.declarator(v_type)?;
-            let offset = self.cur_func_local_variable_offset(&v_name)?; // definitely success because it is just after add variable
-            params.push(NodeKind::Lvar{ offset }.wrap());
+            let (v_name, v_ty) = self.declarator(v_type)?;
+            let (offset, _) = self.cur_func_local_variable_offset(&v_name)?; // definitely success because it is just after add variable
+            params.push(NodeKind::Lvar{ name: v_name, offset, ty: v_ty }.wrap());
 
         }
 
@@ -249,9 +283,9 @@ impl<'a> Parser<'a> {
 
 
     // compound_stmt = (declaration | stmt)* "}"
-    fn compound_stmt(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
+    fn compound_stmt(&mut self) -> Result<Option<Box<Node>>, CompileError> {
 
-        let mut stmts: Vec<Option<Box<NodeKind>>> = Vec::new();
+        let mut stmts: Vec<Option<Box<Node>>> = Vec::new();
         while let Err(_) = self.cur_token().expect_symbol("}") {
 
             if let Token { kind: TokenKind::Type(_), .. } = self.cur_token() {
@@ -268,17 +302,17 @@ impl<'a> Parser<'a> {
 
 
 
-    fn declaration(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
+    fn declaration(&mut self) -> Result<Option<Box<Node>>, CompileError> {
         let base_type: Ty = self.declspec()?;
 
-        let mut assigns: Vec<Option<Box<NodeKind>>> = Vec::new();
+        let mut assigns: Vec<Option<Box<Node>>> = Vec::new();
         while let Err(_) = self.cur_token().expect_symbol(";") {
 
             if let Ok(_) = self.cur_token().expect_symbol(",") {
                 let _ = &self.next_token();
             }
 
-            let v_name = self.declarator(base_type.clone())?;
+            let (v_name, v_ty) = self.declarator(base_type.clone())?;
 
             let Ok(_) = self.cur_token().expect_symbol("=") else {
                 continue;
@@ -286,8 +320,8 @@ impl<'a> Parser<'a> {
 
             let _ = &self.next_token();
 
-            let offset = self.cur_func_local_variable_offset(&v_name)?; // definitely success because it is just after add variable
-            assigns.push(NodeKind::Assign { lhs: NodeKind::Lvar { offset }.wrap(), rhs: self.expr()?, }.wrap());
+            let (offset, _) = self.cur_func_local_variable_offset(&v_name)?; // definitely success because it is just after add variable
+            assigns.push(NodeKind::Assign { lhs: NodeKind::Lvar { name: v_name, offset, ty:v_ty }.wrap(), rhs: self.expr()?, }.wrap());
 
 
         }
@@ -310,7 +344,7 @@ impl<'a> Parser<'a> {
 
     }
 
-    fn declarator(&mut self, base_type: Ty) -> Result<String, CompileError> {
+    fn declarator(&mut self, base_type: Ty) -> Result<(String, Ty), CompileError> {
         // while "*" continues, creates Ty including original type
         let mut ty = base_type;
         while let Ok(_) = self.cur_token().expect_symbol("*") {
@@ -320,16 +354,16 @@ impl<'a> Parser<'a> {
 
         let v_name = self.cur_token().expect_ident()?.to_string();
 
-        // define local variable
-        let _ = self.cur_func_add_local_variable_by_type(&v_name, ty)?;
+        // define local variable (TODO here, deep copy ty instance, it is waste of memory, but need re-think the structure local variables)
+        let _ = self.cur_func_add_local_variable_by_type(&v_name, ty.clone())?;
 
         let _ = &self.next_token();
-        return Ok(v_name);
+        return Ok((v_name, ty)); 
     }
 
 
 
-    fn stmt(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
+    fn stmt(&mut self) -> Result<Option<Box<Node>>, CompileError> {
 
 
         let cur = self.cur_token();
@@ -456,12 +490,12 @@ impl<'a> Parser<'a> {
     }
 
 
-    fn expr(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
+    fn expr(&mut self) -> Result<Option<Box<Node>>, CompileError> {
         self.assign()
     }
 
-    fn assign(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
-        let mut node: Option<Box<NodeKind>> = self.equality()?;
+    fn assign(&mut self) -> Result<Option<Box<Node>>, CompileError> {
+        let mut node: Option<Box<Node>> = self.equality()?;
 
         if let Ok(_) = self.cur_token().expect_symbol("=") {
             let _ = &self.next_token();
@@ -472,8 +506,8 @@ impl<'a> Parser<'a> {
         return Ok(node);
     }
 
-    fn equality(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
-        let mut node: Option<Box<NodeKind>> = self.relational()?;
+    fn equality(&mut self) -> Result<Option<Box<Node>>, CompileError> {
+        let mut node: Option<Box<Node>> = self.relational()?;
 
         loop {
 
@@ -493,8 +527,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn relational(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
-        let mut node: Option<Box<NodeKind>> = self.add()?;
+    fn relational(&mut self) -> Result<Option<Box<Node>>, CompileError> {
+        let mut node: Option<Box<Node>> = self.add()?;
 
         loop {
 
@@ -526,20 +560,24 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn add(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
-        let mut node: Option<Box<NodeKind>> = self.mul()?;
+    fn add(&mut self) -> Result<Option<Box<Node>>, CompileError> {
+        let mut node: Option<Box<Node>> = self.mul()?;
 
         loop {
 
             if let Ok(_) = self.cur_token().expect_symbol("+") {
                 let _ = &self.next_token();
-                node = NodeKind::Add { lhs: node, rhs: self.mul()?, }.wrap();
+                //node = NodeKind::Add { lhs: node, rhs: self.mul()?, }.wrap();
+                let rhs = self.mul()?;
+                node = self.new_add(node, rhs)?;
                 continue;
             }
 
             if let Ok(_) = self.cur_token().expect_symbol("-") {
                 let _ = &self.next_token();
-                node = NodeKind::Sub { lhs: node, rhs: self.mul()?, }.wrap();
+                //node = NodeKind::Sub { lhs: node, rhs: self.mul()?, }.wrap();
+                let rhs = self.mul()?;
+                node = self.new_sub(node, rhs)?;
                 continue;
             }
 
@@ -547,8 +585,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn mul(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
-        let mut node: Option<Box<NodeKind>> = self.unary()?;
+    fn mul(&mut self) -> Result<Option<Box<Node>>, CompileError> {
+        let mut node: Option<Box<Node>> = self.unary()?;
 
         loop {
 
@@ -568,7 +606,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn unary(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
+    fn unary(&mut self) -> Result<Option<Box<Node>>, CompileError> {
         if let Ok(_) = self.cur_token().expect_symbol("+") {
             let _ = &self.next_token();
             return self.unary();
@@ -591,7 +629,7 @@ impl<'a> Parser<'a> {
     }
 
 
-    fn primary(&mut self) -> Result<Option<Box<NodeKind>>, CompileError> {
+    fn primary(&mut self) -> Result<Option<Box<Node>>, CompileError> {
 
         if let Ok(_) = self.cur_token().expect_symbol("(") {
             let _ = &self.next_token();
@@ -614,8 +652,8 @@ impl<'a> Parser<'a> {
                 },
                 Err(_) => {
                     // local variable
-                    let offset = self.cur_func_local_variable_offset(&name)?;
-                    return Ok(NodeKind::Lvar{ offset }.wrap());
+                    let (offset, v_ty) = self.cur_func_local_variable_offset(&name)?;
+                    return Ok(NodeKind::Lvar{ name, offset, ty:v_ty }.wrap());
                 }
             }
         }
@@ -628,11 +666,11 @@ impl<'a> Parser<'a> {
 
 
 
-    fn func_call(&mut self, name: String) -> Result<Option<Box<NodeKind>>, CompileError> {
+    fn func_call(&mut self, name: String) -> Result<Option<Box<Node>>, CompileError> {
 
         let _ = &self.next_token();
 
-        let mut args: Vec<Option<Box<NodeKind>>> = Vec::new();
+        let mut args: Vec<Option<Box<Node>>> = Vec::new();
 
         while let Err(_) = self.cur_token().expect_symbol(")") {
             args.push(self.assign()?);
@@ -645,6 +683,54 @@ impl<'a> Parser<'a> {
         let _ = &self.next_token(); // skip ")"
 
         Ok(NodeKind::FuncCall { name, args, }.wrap())
+    }
+
+    fn new_add(&self, mut l: Option<Box<Node>>, mut r: Option<Box<Node>>) -> Result<Option<Box<Node>>, CompileError> {
+
+        let lb: &mut Box<Node> = l.as_mut().unwrap();
+        let lty = (*lb).ty();
+        let rb: &mut Box<Node> = r.as_mut().unwrap();
+        let rty = (*rb).ty();
+
+
+        return match (lty, rty) {
+            // int + int
+            (Ty::Int, Ty::Int) => Ok(NodeKind::Add { lhs: l, rhs: r, }.wrap()),
+            // pointer + pointer -> error
+            (Ty::Pointer {..}, Ty::Pointer {..}) => Err(CompileError::new(&[&format!("invalid operand in {}", &self.cur_func)])),
+            // pointer + int -> pointer + (int * 8)
+            (Ty::Pointer {..}, Ty::Int) => Ok(NodeKind::Add { lhs: l, rhs: NodeKind::Mul { lhs: r, rhs: NodeKind::eight(), }.wrap(), }.wrap()),
+            // int + pointer -> pointer + (int * 8) (l, r are reverse)
+            (Ty::Int, Ty::Pointer {..}) => Ok(NodeKind::Add { lhs: r, rhs: NodeKind::Mul { lhs: l, rhs: NodeKind::eight(), }.wrap(), }.wrap()),
+            // not reach here
+            //(_, _) => Err(CompileError::new(&[&format!("invalid combination of add in {}", &self.cur_func)])),
+        }
+    }
+
+    fn new_sub(&self, mut l: Option<Box<Node>>, mut r: Option<Box<Node>>) -> Result<Option<Box<Node>>, CompileError> {
+
+        let lb: &mut Box<Node> = l.as_mut().unwrap();
+        let lty = (*lb).ty();
+        let rb: &mut Box<Node> = r.as_mut().unwrap();
+        let rty = (*rb).ty();
+
+
+        return match (lty, rty) {
+            // int - int
+            (Ty::Int, Ty::Int) => Ok(NodeKind::Sub { lhs: l, rhs: r, }.wrap()),
+            // pointer - pointer -> calc how many elements between lhs, rhs
+            (Ty::Pointer {..}, Ty::Pointer {..}) => {
+                let mut node = NodeKind::Sub { lhs: l, rhs: r, }.wrap();
+                node.as_mut().unwrap().ty = Some(Ty::Int);
+                Ok(NodeKind::Div { lhs: node, rhs: NodeKind::eight(), }.wrap())
+            },
+            // pointer - int -> pointer - (int * 8)
+            (Ty::Pointer {..}, Ty::Int) => Ok(NodeKind::Sub { lhs: l, rhs: NodeKind::Mul { lhs: r, rhs: NodeKind::eight(), }.wrap(), }.wrap()),
+            // int - pointer -> error
+            (Ty::Int, Ty::Pointer {..}) => Err(CompileError::new(&[&format!("invalid operand in {}", &self.cur_func)])),
+            // not reach here
+            //(_, _) => Err(CompileError::new(&[&format!("invalid combination of sub in {}", &self.cur_func)])),
+        }
     }
 }
 
